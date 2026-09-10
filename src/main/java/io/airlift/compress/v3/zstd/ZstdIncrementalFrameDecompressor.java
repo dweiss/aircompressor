@@ -123,7 +123,7 @@ public class ZstdIncrementalFrameDecompressor
                     int freeOutputSize = outputLimit - output;
                     if (freeOutputSize > 0) {
                         int copySize = min(freeOutputSize, flushableOutputSize);
-                        System.arraycopy(windowBase, toIntExact(windowAddress - 0L), outputArray, output, copySize);
+                        System.arraycopy(windowBase, toIntExact(windowAddress), outputArray, output, copySize);
                         if (partialHash != null) {
                             partialHash.update(outputArray, output, copySize);
                         }
@@ -256,7 +256,7 @@ public class ZstdIncrementalFrameDecompressor
 
                     // hash remaining frame data
                     int pendingOutputSize = toIntExact(windowPosition - windowAddress);
-                    partialHash.update(windowBase, toIntExact(windowAddress - 0L), pendingOutputSize);
+                    partialHash.update(windowBase, toIntExact(windowAddress), pendingOutputSize);
 
                     // verify hash
                     long hash = partialHash.hash();
@@ -305,7 +305,7 @@ public class ZstdIncrementalFrameDecompressor
             // if window content is currently offset from the array base, move to the front
             if (windowAddress != 0L) {
                 // copy the window contents to the head of the window buffer
-                System.arraycopy(windowBase, toIntExact(windowAddress - 0L), windowBase, 0, windowContentsSize);
+                System.arraycopy(windowBase, toIntExact(windowAddress), windowBase, 0, windowContentsSize);
                 windowAddress = 0L;
                 windowPosition = windowAddress + windowContentsSize;
             }

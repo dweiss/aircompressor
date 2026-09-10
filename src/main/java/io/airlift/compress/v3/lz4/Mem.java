@@ -18,7 +18,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteOrder;
 
-/** Little-endian access on byte arrays through VarHandle views (replaces sun.misc.Unsafe). */
+/** Little-endian multi-byte access on byte arrays through VarHandle views (replaces sun.misc.Unsafe). */
 final class Mem
 {
     static final VarHandle SHORT_LE = MethodHandles.byteArrayViewVarHandle(short[].class, ByteOrder.LITTLE_ENDIAN);
@@ -38,46 +38,6 @@ final class Mem
             return array;
         }
         return null;
-    }
-
-    static byte getByte(byte[] base, long offset)
-    {
-        return base[(int) offset];
-    }
-
-    static short getShort(byte[] base, long offset)
-    {
-        return (short) SHORT_LE.get(base, (int) offset);
-    }
-
-    static int getInt(byte[] base, long offset)
-    {
-        return (int) INT_LE.get(base, (int) offset);
-    }
-
-    static long getLong(byte[] base, long offset)
-    {
-        return (long) LONG_LE.get(base, (int) offset);
-    }
-
-    static void putByte(byte[] base, long offset, byte value)
-    {
-        base[(int) offset] = value;
-    }
-
-    static void putShort(byte[] base, long offset, short value)
-    {
-        SHORT_LE.set(base, (int) offset, value);
-    }
-
-    static void putInt(byte[] base, long offset, int value)
-    {
-        INT_LE.set(base, (int) offset, value);
-    }
-
-    static void putLong(byte[] base, long offset, long value)
-    {
-        LONG_LE.set(base, (int) offset, value);
     }
 
     static void copyMemory(byte[] srcBase, long srcOffset, byte[] dstBase, long dstOffset, long length)
