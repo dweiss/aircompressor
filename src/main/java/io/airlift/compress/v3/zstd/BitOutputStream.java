@@ -64,7 +64,7 @@ class BitOutputStream
     {
         int bytes = bitCount >>> 3;
 
-        Mem.putLong(outputBase, currentAddress, container);
+        Mem.LONG_LE.set(outputBase, (int) currentAddress, container);
         currentAddress += bytes;
 
         if (currentAddress > outputLimit) {

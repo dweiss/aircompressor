@@ -133,10 +133,10 @@ final class XxHash64
     {
         int remaining = length;
         while (remaining >= 32) {
-            v1 = mix(v1, Mem.getLong(base, address));
-            v2 = mix(v2, Mem.getLong(base, address + 8));
-            v3 = mix(v3, Mem.getLong(base, address + 16));
-            v4 = mix(v4, Mem.getLong(base, address + 24));
+            v1 = mix(v1, (long) Mem.LONG_LE.get(base, (int) address));
+            v2 = mix(v2, (long) Mem.LONG_LE.get(base, (int) (address + 8)));
+            v3 = mix(v3, (long) Mem.LONG_LE.get(base, (int) (address + 16)));
+            v4 = mix(v4, (long) Mem.LONG_LE.get(base, (int) (address + 24)));
 
             address += 32;
             remaining -= 32;
@@ -199,17 +199,17 @@ final class XxHash64
     private static long updateTail(long hash, byte[] base, long address, int index, int length)
     {
         while (index <= length - 8) {
-            hash = updateTail(hash, Mem.getLong(base, address + index));
+            hash = updateTail(hash, (long) Mem.LONG_LE.get(base, (int) (address + index)));
             index += 8;
         }
 
         if (index <= length - 4) {
-            hash = updateTail(hash, Mem.getInt(base, address + index));
+            hash = updateTail(hash, (int) Mem.INT_LE.get(base, (int) (address + index)));
             index += 4;
         }
 
         while (index < length) {
-            hash = updateTail(hash, Mem.getByte(base, address + index));
+            hash = updateTail(hash, base[(int) (address + index)]);
             index++;
         }
 
@@ -227,10 +227,10 @@ final class XxHash64
 
         int remaining = length;
         while (remaining >= 32) {
-            v1 = mix(v1, Mem.getLong(base, address));
-            v2 = mix(v2, Mem.getLong(base, address + 8));
-            v3 = mix(v3, Mem.getLong(base, address + 16));
-            v4 = mix(v4, Mem.getLong(base, address + 24));
+            v1 = mix(v1, (long) Mem.LONG_LE.get(base, (int) address));
+            v2 = mix(v2, (long) Mem.LONG_LE.get(base, (int) (address + 8)));
+            v3 = mix(v3, (long) Mem.LONG_LE.get(base, (int) (address + 16)));
+            v4 = mix(v4, (long) Mem.LONG_LE.get(base, (int) (address + 24)));
 
             address += 32;
             remaining -= 32;

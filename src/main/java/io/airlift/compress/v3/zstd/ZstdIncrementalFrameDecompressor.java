@@ -180,12 +180,12 @@ public class ZstdIncrementalFrameDecompressor
                     return;
                 }
                 if (inputBufferSize >= SIZE_OF_INT) {
-                    blockHeader = Mem.getInt(inputBase, input) & 0xFF_FFFF;
+                    blockHeader = (int) Mem.INT_LE.get(inputBase, (int) input) & 0xFF_FFFF;
                 }
                 else {
-                    blockHeader = Mem.getByte(inputBase, input) & 0xFF |
-                            (Mem.getByte(inputBase, input + 1) & 0xFF) << 8 |
-                            (Mem.getByte(inputBase, input + 2) & 0xFF) << 16;
+                    blockHeader = inputBase[(int) input] & 0xFF |
+                            (inputBase[(int) (input + 1)] & 0xFF) << 8 |
+                            (inputBase[(int) (input + 2)] & 0xFF) << 16;
                 }
                 input += SIZE_OF_BLOCK_HEADER;
                 state = State.READ_BLOCK;
@@ -249,7 +249,7 @@ public class ZstdIncrementalFrameDecompressor
                     }
 
                     // read checksum
-                    int checksum = Mem.getInt(inputBase, input);
+                    int checksum = (int) Mem.INT_LE.get(inputBase, (int) input);
                     input += SIZE_OF_INT;
 
                     checkState(partialHash != null, "Partial hash not set");
@@ -341,7 +341,7 @@ public class ZstdIncrementalFrameDecompressor
     {
         verify(inputAddress < inputLimit, inputAddress, "Not enough input bytes");
 
-        int frameHeaderDescriptor = Mem.getByte(inputBase, inputAddress) & 0xFF;
+        int frameHeaderDescriptor = inputBase[(int) inputAddress] & 0xFF;
         boolean singleSegment = (frameHeaderDescriptor & 0b100000) != 0;
         int dictionaryDescriptor = frameHeaderDescriptor & 0b11;
         int contentSizeDescriptor = frameHeaderDescriptor >>> 6;

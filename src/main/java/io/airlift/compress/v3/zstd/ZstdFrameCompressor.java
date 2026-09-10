@@ -51,7 +51,7 @@ final class ZstdFrameCompressor
     {
         checkArgument(outputLimit - outputAddress >= SIZE_OF_INT, "Output buffer too small");
 
-        Mem.putInt(outputBase, outputAddress, MAGIC_NUMBER);
+        Mem.INT_LE.set(outputBase, (int) outputAddress, MAGIC_NUMBER);
         return SIZE_OF_INT;
     }
 
@@ -73,7 +73,7 @@ final class ZstdFrameCompressor
             frameHeaderDescriptor |= SINGLE_SEGMENT_FLAG;
         }
 
-        Mem.putByte(outputBase, output, (byte) frameHeaderDescriptor);
+        outputBase[(int) output] = (byte) frameHeaderDescriptor;
         output++;
 
         if (!singleSegment) {
@@ -93,22 +93,22 @@ final class ZstdFrameCompressor
             int mantissa = remainder / (base / 8);
             int encoded = ((exponent - MIN_WINDOW_LOG) << 3) | mantissa;
 
-            Mem.putByte(outputBase, output, (byte) encoded);
+            outputBase[(int) output] = (byte) encoded;
             output++;
         }
 
         switch (contentSizeDescriptor) {
             case 0 -> {
                 if (singleSegment) {
-                    Mem.putByte(outputBase, output++, (byte) inputSize);
+                    outputBase[(int) (output++)] = (byte) inputSize;
                 }
             }
             case 1 -> {
-                Mem.putShort(outputBase, output, (short) (inputSize - 256));
+                Mem.SHORT_LE.set(outputBase, (int) output, (short) (inputSize - 256));
                 output += SIZE_OF_SHORT;
             }
             case 2 -> {
-                Mem.putInt(outputBase, output, inputSize);
+                Mem.INT_LE.set(outputBase, (int) output, inputSize);
                 output += SIZE_OF_INT;
             }
             default -> throw new AssertionError();
@@ -126,7 +126,7 @@ final class ZstdFrameCompressor
 
         long hash = XxHash64.hash(0, inputBase, inputAddress, inputSize);
 
-        Mem.putInt(outputBase, outputAddress, (int) hash);
+        Mem.INT_LE.set(outputBase, (int) outputAddress, (int) hash);
 
         return SIZE_OF_INT;
     }
@@ -361,12 +361,12 @@ final class ZstdFrameCompressor
             }
             case 4 -> { // 2 - 2 - 14 - 14
                 int header = encodingType | (2 << 2) | (literalsSize << 4) | (totalSize << 18);
-                Mem.putInt(outputBase, outputAddress, header);
+                Mem.INT_LE.set(outputBase, (int) outputAddress, header);
             }
             case 5 -> { // 2 - 2 - 18 - 18
                 int header = encodingType | (3 << 2) | (literalsSize << 4) | (totalSize << 22);
-                Mem.putInt(outputBase, outputAddress, header);
-                Mem.putByte(outputBase, outputAddress + SIZE_OF_INT, (byte) (totalSize >>> 10));
+                Mem.INT_LE.set(outputBase, (int) outputAddress, header);
+                outputBase[(int) (outputAddress + SIZE_OF_INT)] = (byte) (totalSize >>> 10);
             }
             default ->  // not possible : headerSize is {3,4,5}
                     throw new IllegalStateException();
@@ -381,16 +381,16 @@ final class ZstdFrameCompressor
 
         switch (headerSize) {
             case 1 -> // 2 - 1 - 5
-                    Mem.putByte(outputBase, outputAddress, (byte) (RLE_LITERALS_BLOCK | (inputSize << 3)));
+                    outputBase[(int) outputAddress] = (byte) (RLE_LITERALS_BLOCK | (inputSize << 3));
             case 2 -> // 2 - 2 - 12
-                    Mem.putShort(outputBase, outputAddress, (short) (RLE_LITERALS_BLOCK | (1 << 2) | (inputSize << 4)));
+                    Mem.SHORT_LE.set(outputBase, (int) outputAddress, (short) (RLE_LITERALS_BLOCK | (1 << 2) | (inputSize << 4)));
             case 3 -> // 2 - 2 - 20
-                    Mem.putInt(outputBase, outputAddress, RLE_LITERALS_BLOCK | 3 << 2 | inputSize << 4);
+                    Mem.INT_LE.set(outputBase, (int) outputAddress, RLE_LITERALS_BLOCK | 3 << 2 | inputSize << 4);
             default -> // impossible. headerSize is {1,2,3}
                     throw new IllegalStateException();
         }
 
-        Mem.putByte(outputBase, outputAddress + headerSize, Mem.getByte(inputBase, inputAddress));
+        outputBase[(int) (outputAddress + headerSize)] = inputBase[(int) inputAddress];
 
         return headerSize + 1;
     }
@@ -415,8 +415,8 @@ final class ZstdFrameCompressor
         checkArgument(inputSize + headerSize <= outputSize, "Output buffer too small");
 
         switch (headerSize) {
-            case 1 -> Mem.putByte(outputBase, outputAddress, (byte) (RAW_LITERALS_BLOCK | (inputSize << 3)));
-            case 2 -> Mem.putShort(outputBase, outputAddress, (short) (RAW_LITERALS_BLOCK | (1 << 2) | (inputSize << 4)));
+            case 1 -> outputBase[(int) outputAddress] = (byte) (RAW_LITERALS_BLOCK | (inputSize << 3));
+            case 2 -> Mem.SHORT_LE.set(outputBase, (int) outputAddress, (short) (RAW_LITERALS_BLOCK | (1 << 2) | (inputSize << 4)));
             case 3 -> put24BitLittleEndian(outputBase, outputAddress, RAW_LITERALS_BLOCK | (3 << 2) | (inputSize << 4));
             default -> throw new AssertionError();
         }

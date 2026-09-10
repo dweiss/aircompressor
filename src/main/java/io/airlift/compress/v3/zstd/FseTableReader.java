@@ -33,7 +33,7 @@ class FseTableReader
         int symbolNumber = 0;
         boolean previousIsZero = false;
 
-        int bitStream = Mem.getInt(inputBase, input);
+        int bitStream = (int) Mem.INT_LE.get(inputBase, (int) input);
 
         int tableLog = (bitStream & 0xF) + MIN_TABLE_LOG;
 
@@ -53,7 +53,7 @@ class FseTableReader
                     n0 += 24;
                     if (input < inputLimit - 5) {
                         input += 2;
-                        bitStream = (Mem.getInt(inputBase, input) >>> bitCount);
+                        bitStream = ((int) Mem.INT_LE.get(inputBase, (int) input) >>> bitCount);
                     }
                     else {
                         // end of bit stream
@@ -77,7 +77,7 @@ class FseTableReader
                 if ((input <= inputLimit - 7) || (input + (bitCount >>> 3) <= inputLimit - 4)) {
                     input += bitCount >>> 3;
                     bitCount &= 7;
-                    bitStream = Mem.getInt(inputBase, input) >>> bitCount;
+                    bitStream = (int) Mem.INT_LE.get(inputBase, (int) input) >>> bitCount;
                 }
                 else {
                     bitStream >>>= 2;
@@ -116,7 +116,7 @@ class FseTableReader
                 bitCount -= (int) (8 * (inputLimit - 4 - input));
                 input = inputLimit - 4;
             }
-            bitStream = Mem.getInt(inputBase, input) >>> (bitCount & 31);
+            bitStream = (int) Mem.INT_LE.get(inputBase, (int) input) >>> (bitCount & 31);
         }
 
         verify(remaining == 1 && bitCount <= 32, input, "Input is corrupted");

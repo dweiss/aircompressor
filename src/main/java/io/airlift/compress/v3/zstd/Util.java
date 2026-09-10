@@ -108,14 +108,14 @@ final class Util
 
     public static int get24BitLittleEndian(byte[] inputBase, long inputAddress)
     {
-        return (Mem.getShort(inputBase, inputAddress) & 0xFFFF)
-                | ((Mem.getByte(inputBase, inputAddress + SIZE_OF_SHORT) & 0xFF) << Short.SIZE);
+        return ((short) Mem.SHORT_LE.get(inputBase, (int) inputAddress) & 0xFFFF)
+                | ((inputBase[(int) (inputAddress + SIZE_OF_SHORT)] & 0xFF) << Short.SIZE);
     }
 
     public static void put24BitLittleEndian(byte[] outputBase, long outputAddress, int value)
     {
-        Mem.putShort(outputBase, outputAddress, (short) value);
-        Mem.putByte(outputBase, outputAddress + SIZE_OF_SHORT, (byte) (value >>> Short.SIZE));
+        Mem.SHORT_LE.set(outputBase, (int) outputAddress, (short) value);
+        outputBase[(int) (outputAddress + SIZE_OF_SHORT)] = (byte) (value >>> Short.SIZE);
     }
 
     // provides the minimum logSize to safely represent a distribution

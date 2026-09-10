@@ -55,7 +55,7 @@ class Huffman
 
         // read table header
         verify(size > 0, input, "Not enough input bytes");
-        int inputSize = Mem.getByte(inputBase, input++) & 0xFF;
+        int inputSize = inputBase[(int) (input++)] & 0xFF;
 
         int outputSize;
         if (inputSize >= 128) {
@@ -66,7 +66,7 @@ class Huffman
             verify(outputSize <= MAX_SYMBOL + 1, input, "Input is corrupted");
 
             for (int i = 0; i < outputSize; i += 2) {
-                int value = Mem.getByte(inputBase, input + i / 2) & 0xFF;
+                int value = inputBase[(int) (input + i / 2)] & 0xFF;
                 weights[i] = (byte) (value >>> 4);
                 weights[i + 1] = (byte) (value & 0b1111);
             }
@@ -167,9 +167,9 @@ class Huffman
         verify(inputLimit - inputAddress >= 10, inputAddress, "Input is corrupted"); // jump table + 1 byte per stream
 
         long start1 = inputAddress + 3 * SIZE_OF_SHORT; // for the shorts we read below
-        long start2 = start1 + (Mem.getShort(inputBase, inputAddress) & 0xFFFF);
-        long start3 = start2 + (Mem.getShort(inputBase, inputAddress + 2) & 0xFFFF);
-        long start4 = start3 + (Mem.getShort(inputBase, inputAddress + 4) & 0xFFFF);
+        long start2 = start1 + ((short) Mem.SHORT_LE.get(inputBase, (int) inputAddress) & 0xFFFF);
+        long start3 = start2 + ((short) Mem.SHORT_LE.get(inputBase, (int) (inputAddress + 2)) & 0xFFFF);
+        long start4 = start3 + ((short) Mem.SHORT_LE.get(inputBase, (int) (inputAddress + 4)) & 0xFFFF);
 
         verify(start2 < start3 && start3 < start4 && start4 < inputLimit, inputAddress, "Input is corrupted");
 
@@ -214,25 +214,10 @@ class Huffman
         byte[] symbols = this.symbols;
 
         while (output4 < fastOutputLimit) {
-            stream1bitsConsumed = decodeSymbol(outputBase, output1, stream1bits, stream1bitsConsumed, tableLog, numbersOfBits, symbols);
-            stream2bitsConsumed = decodeSymbol(outputBase, output2, stream2bits, stream2bitsConsumed, tableLog, numbersOfBits, symbols);
-            stream3bitsConsumed = decodeSymbol(outputBase, output3, stream3bits, stream3bitsConsumed, tableLog, numbersOfBits, symbols);
-            stream4bitsConsumed = decodeSymbol(outputBase, output4, stream4bits, stream4bitsConsumed, tableLog, numbersOfBits, symbols);
-
-            stream1bitsConsumed = decodeSymbol(outputBase, output1 + 1, stream1bits, stream1bitsConsumed, tableLog, numbersOfBits, symbols);
-            stream2bitsConsumed = decodeSymbol(outputBase, output2 + 1, stream2bits, stream2bitsConsumed, tableLog, numbersOfBits, symbols);
-            stream3bitsConsumed = decodeSymbol(outputBase, output3 + 1, stream3bits, stream3bitsConsumed, tableLog, numbersOfBits, symbols);
-            stream4bitsConsumed = decodeSymbol(outputBase, output4 + 1, stream4bits, stream4bitsConsumed, tableLog, numbersOfBits, symbols);
-
-            stream1bitsConsumed = decodeSymbol(outputBase, output1 + 2, stream1bits, stream1bitsConsumed, tableLog, numbersOfBits, symbols);
-            stream2bitsConsumed = decodeSymbol(outputBase, output2 + 2, stream2bits, stream2bitsConsumed, tableLog, numbersOfBits, symbols);
-            stream3bitsConsumed = decodeSymbol(outputBase, output3 + 2, stream3bits, stream3bitsConsumed, tableLog, numbersOfBits, symbols);
-            stream4bitsConsumed = decodeSymbol(outputBase, output4 + 2, stream4bits, stream4bitsConsumed, tableLog, numbersOfBits, symbols);
-
-            stream1bitsConsumed = decodeSymbol(outputBase, output1 + 3, stream1bits, stream1bitsConsumed, tableLog, numbersOfBits, symbols);
-            stream2bitsConsumed = decodeSymbol(outputBase, output2 + 3, stream2bits, stream2bitsConsumed, tableLog, numbersOfBits, symbols);
-            stream3bitsConsumed = decodeSymbol(outputBase, output3 + 3, stream3bits, stream3bitsConsumed, tableLog, numbersOfBits, symbols);
-            stream4bitsConsumed = decodeSymbol(outputBase, output4 + 3, stream4bits, stream4bitsConsumed, tableLog, numbersOfBits, symbols);
+            stream1bitsConsumed = decode4Symbols(outputBase, output1, stream1bits, stream1bitsConsumed, tableLog, numbersOfBits, symbols);
+            stream2bitsConsumed = decode4Symbols(outputBase, output2, stream2bits, stream2bitsConsumed, tableLog, numbersOfBits, symbols);
+            stream3bitsConsumed = decode4Symbols(outputBase, output3, stream3bits, stream3bitsConsumed, tableLog, numbersOfBits, symbols);
+            stream4bitsConsumed = decode4Symbols(outputBase, output4, stream4bits, stream4bitsConsumed, tableLog, numbersOfBits, symbols);
 
             output1 += SIZE_OF_INT;
             output2 += SIZE_OF_INT;
@@ -315,10 +300,33 @@ class Huffman
         verify(isEndOfStream(startAddress, currentAddress, bitsConsumed), startAddress, "Bit stream is not fully consumed");
     }
 
+    // Decodes 4 symbols and writes them with a single int store (one bounds check instead of four).
+    private static int decode4Symbols(byte[] outputBase, long outputAddress, long bitContainer, int bitsConsumed, int tableLog, byte[] numbersOfBits, byte[] symbols)
+    {
+        int value = (int) peekBitsFast(bitsConsumed, bitContainer, tableLog);
+        int packed = symbols[value] & 0xFF;
+        bitsConsumed += numbersOfBits[value];
+
+        value = (int) peekBitsFast(bitsConsumed, bitContainer, tableLog);
+        packed |= (symbols[value] & 0xFF) << 8;
+        bitsConsumed += numbersOfBits[value];
+
+        value = (int) peekBitsFast(bitsConsumed, bitContainer, tableLog);
+        packed |= (symbols[value] & 0xFF) << 16;
+        bitsConsumed += numbersOfBits[value];
+
+        value = (int) peekBitsFast(bitsConsumed, bitContainer, tableLog);
+        packed |= (symbols[value] & 0xFF) << 24;
+        bitsConsumed += numbersOfBits[value];
+
+        Mem.INT_LE.set(outputBase, (int) outputAddress, packed);
+        return bitsConsumed;
+    }
+
     private static int decodeSymbol(byte[] outputBase, long outputAddress, long bitContainer, int bitsConsumed, int tableLog, byte[] numbersOfBits, byte[] symbols)
     {
         int value = (int) peekBitsFast(bitsConsumed, bitContainer, tableLog);
-        Mem.putByte(outputBase, outputAddress, symbols[value]);
+        outputBase[(int) outputAddress] = symbols[value];
         return bitsConsumed + numbersOfBits[value];
     }
 }

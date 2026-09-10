@@ -30,7 +30,7 @@ final class Histogram
         Arrays.fill(counts, 0);
 
         for (int i = 0; i < inputSize; i++) {
-            int symbol = Mem.getByte(inputBase, input) & 0xFF;
+            int symbol = inputBase[(int) input] & 0xFF;
             input++;
             counts[symbol]++;
         }

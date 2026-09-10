@@ -71,18 +71,18 @@ final class SequenceEncoder
 
         int sequenceCount = sequences.sequenceCount;
         if (sequenceCount < 0x7F) {
-            Mem.putByte(outputBase, output, (byte) sequenceCount);
+            outputBase[(int) output] = (byte) sequenceCount;
             output++;
         }
         else if (sequenceCount < LONG_NUMBER_OF_SEQUENCES) {
-            Mem.putByte(outputBase, output, (byte) (sequenceCount >>> 8 | 0x80));
-            Mem.putByte(outputBase, output + 1, (byte) sequenceCount);
+            outputBase[(int) output] = (byte) (sequenceCount >>> 8 | 0x80);
+            outputBase[(int) (output + 1)] = (byte) sequenceCount;
             output += SIZE_OF_SHORT;
         }
         else {
-            Mem.putByte(outputBase, output, (byte) 0xFF);
+            outputBase[(int) output] = (byte) 0xFF;
             output++;
-            Mem.putShort(outputBase, output, (short) (sequenceCount - LONG_NUMBER_OF_SEQUENCES));
+            Mem.SHORT_LE.set(outputBase, (int) output, (short) (sequenceCount - LONG_NUMBER_OF_SEQUENCES));
             output += SIZE_OF_SHORT;
         }
 
@@ -107,7 +107,7 @@ final class SequenceEncoder
         FseCompressionTable literalLengthTable;
         switch (literalsLengthEncodingType) {
             case SEQUENCE_ENCODING_RLE -> {
-                Mem.putByte(outputBase, output, sequences.literalLengthCodes[0]);
+                outputBase[(int) output] = sequences.literalLengthCodes[0];
                 output++;
                 workspace.literalLengthTable.initializeRleTable(maxSymbol);
                 literalLengthTable = workspace.literalLengthTable;
@@ -143,7 +143,7 @@ final class SequenceEncoder
         FseCompressionTable offsetCodeTable;
         switch (offsetEncodingType) {
             case SEQUENCE_ENCODING_RLE -> {
-                Mem.putByte(outputBase, output, sequences.offsetCodes[0]);
+                outputBase[(int) output] = sequences.offsetCodes[0];
                 output++;
                 workspace.offsetCodeTable.initializeRleTable(maxSymbol);
                 offsetCodeTable = workspace.offsetCodeTable;
@@ -176,7 +176,7 @@ final class SequenceEncoder
         FseCompressionTable matchLengthTable;
         switch (matchLengthEncodingType) {
             case SEQUENCE_ENCODING_RLE -> {
-                Mem.putByte(outputBase, output, sequences.matchLengthCodes[0]);
+                outputBase[(int) output] = sequences.matchLengthCodes[0];
                 output++;
                 workspace.matchLengthTable.initializeRleTable(maxSymbol);
                 matchLengthTable = workspace.matchLengthTable;
@@ -200,7 +200,7 @@ final class SequenceEncoder
         }
 
         // flags
-        Mem.putByte(outputBase, headerAddress, (byte) ((literalsLengthEncodingType << 6) | (offsetEncodingType << 4) | (matchLengthEncodingType << 2)));
+        outputBase[(int) headerAddress] = (byte) ((literalsLengthEncodingType << 6) | (offsetEncodingType << 4) | (matchLengthEncodingType << 2));
 
         output += encodeSequences(outputBase, output, outputLimit, matchLengthTable, offsetCodeTable, literalLengthTable, sequences);
 

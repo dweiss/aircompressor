@@ -83,7 +83,7 @@ final class SequenceStore
         long output = literalsLength;
         int copied = 0;
         do {
-            Mem.putLong(literalsBuffer, output, Mem.getLong(literalBase, input));
+            Mem.LONG_LE.set(literalsBuffer, (int) output, (long) Mem.LONG_LE.get(literalBase, (int) input));
             input += SIZE_OF_LONG;
             output += SIZE_OF_LONG;
             copied += SIZE_OF_LONG;
