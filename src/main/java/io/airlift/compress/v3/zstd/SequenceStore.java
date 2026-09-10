@@ -71,19 +71,19 @@ final class SequenceStore
         reset();
     }
 
-    public void appendLiterals(byte[] inputBase, long inputAddress, int inputSize)
+    public void appendLiterals(byte[] inputBase, int inputAddress, int inputSize)
     {
         Mem.copyMemory(inputBase, inputAddress, literalsBuffer, literalsLength, inputSize);
         literalsLength += inputSize;
     }
 
-    public void storeSequence(byte[] literalBase, long literalAddress, int literalLength, int offsetCode, int matchLengthBase)
+    public void storeSequence(byte[] literalBase, int literalAddress, int literalLength, int offsetCode, int matchLengthBase)
     {
-        long input = literalAddress;
-        long output = literalsLength;
+        int input = literalAddress;
+        int output = literalsLength;
         int copied = 0;
         do {
-            Mem.LONG_LE.set(literalsBuffer, (int) output, (long) Mem.LONG_LE.get(literalBase, (int) input));
+            Mem.LONG_LE.set(literalsBuffer, output, (long) Mem.LONG_LE.get(literalBase, input));
             input += SIZE_OF_LONG;
             output += SIZE_OF_LONG;
             copied += SIZE_OF_LONG;

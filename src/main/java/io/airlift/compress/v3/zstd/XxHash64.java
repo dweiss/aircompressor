@@ -36,7 +36,7 @@ final class XxHash64
 
     private final long seed;
 
-    private static final long BUFFER_ADDRESS = 0L;
+    private static final int BUFFER_ADDRESS = 0;
     private final byte[] buffer = new byte[32];
     private int bufferSize;
 
@@ -100,7 +100,7 @@ final class XxHash64
         return hash;
     }
 
-    private void updateHash(byte[] base, long address, int length)
+    private void updateHash(byte[] base, int address, int length)
     {
         if (bufferSize > 0) {
             int available = min(32 - bufferSize, length);
@@ -129,14 +129,14 @@ final class XxHash64
         }
     }
 
-    private int updateBody(byte[] base, long address, int length)
+    private int updateBody(byte[] base, int address, int length)
     {
         int remaining = length;
         while (remaining >= 32) {
-            v1 = mix(v1, (long) Mem.LONG_LE.get(base, (int) address));
-            v2 = mix(v2, (long) Mem.LONG_LE.get(base, (int) (address + 8)));
-            v3 = mix(v3, (long) Mem.LONG_LE.get(base, (int) (address + 16)));
-            v4 = mix(v4, (long) Mem.LONG_LE.get(base, (int) (address + 24)));
+            v1 = mix(v1, (long) Mem.LONG_LE.get(base, address));
+            v2 = mix(v2, (long) Mem.LONG_LE.get(base, address + 8));
+            v3 = mix(v3, (long) Mem.LONG_LE.get(base, address + 16));
+            v4 = mix(v4, (long) Mem.LONG_LE.get(base, address + 24));
 
             address += 32;
             remaining -= 32;
@@ -177,7 +177,7 @@ final class XxHash64
         return hash.hash();
     }
 
-    public static long hash(long seed, byte[] base, long address, int length)
+    public static long hash(long seed, byte[] base, int address, int length)
     {
         long hash;
         if (length >= 32) {
@@ -196,20 +196,20 @@ final class XxHash64
         return updateTail(hash, base, address, index, length);
     }
 
-    private static long updateTail(long hash, byte[] base, long address, int index, int length)
+    private static long updateTail(long hash, byte[] base, int address, int index, int length)
     {
         while (index <= length - 8) {
-            hash = updateTail(hash, (long) Mem.LONG_LE.get(base, (int) (address + index)));
+            hash = updateTail(hash, (long) Mem.LONG_LE.get(base, address + index));
             index += 8;
         }
 
         if (index <= length - 4) {
-            hash = updateTail(hash, (int) Mem.INT_LE.get(base, (int) (address + index)));
+            hash = updateTail(hash, (int) Mem.INT_LE.get(base, address + index));
             index += 4;
         }
 
         while (index < length) {
-            hash = updateTail(hash, base[(int) (address + index)]);
+            hash = updateTail(hash, base[address + index]);
             index++;
         }
 
@@ -218,7 +218,7 @@ final class XxHash64
         return hash;
     }
 
-    private static long updateBody(long seed, byte[] base, long address, int length)
+    private static long updateBody(long seed, byte[] base, int address, int length)
     {
         long v1 = seed + PRIME64_1 + PRIME64_2;
         long v2 = seed + PRIME64_2;
@@ -227,10 +227,10 @@ final class XxHash64
 
         int remaining = length;
         while (remaining >= 32) {
-            v1 = mix(v1, (long) Mem.LONG_LE.get(base, (int) address));
-            v2 = mix(v2, (long) Mem.LONG_LE.get(base, (int) (address + 8)));
-            v3 = mix(v3, (long) Mem.LONG_LE.get(base, (int) (address + 16)));
-            v4 = mix(v4, (long) Mem.LONG_LE.get(base, (int) (address + 24)));
+            v1 = mix(v1, (long) Mem.LONG_LE.get(base, address));
+            v2 = mix(v2, (long) Mem.LONG_LE.get(base, address + 8));
+            v3 = mix(v3, (long) Mem.LONG_LE.get(base, address + 16));
+            v4 = mix(v4, (long) Mem.LONG_LE.get(base, address + 24));
 
             address += 32;
             remaining -= 32;

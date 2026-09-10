@@ -49,7 +49,7 @@ public class ZstdOutputStream
             throws IOException
     {
         this.outputStream = requireNonNull(outputStream, "outputStream is null");
-        this.context = new CompressionContext(CompressionParameters.compute(DEFAULT_COMPRESSION_LEVEL, -1), 0L, Integer.MAX_VALUE);
+        this.context = new CompressionContext(CompressionParameters.compute(DEFAULT_COMPRESSION_LEVEL, -1), 0, Integer.MAX_VALUE);
         this.maxBufferSize = context.parameters.getWindowSize() * 4;
 
         // create output buffer large enough for a single block
@@ -191,7 +191,7 @@ public class ZstdOutputStream
                     uncompressedOffset,
                     blockSize,
                     compressed,
-                    0L,
+                    0,
                     compressed.length,
                     context,
                     lastChunk && blockSize == chunkSize);

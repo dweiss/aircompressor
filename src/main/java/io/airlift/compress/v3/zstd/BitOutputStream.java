@@ -27,14 +27,14 @@ class BitOutputStream
             0x3FFFFFFF, 0x7FFFFFFF}; // up to 31 bits
 
     private final byte[] outputBase;
-    private final long outputAddress;
-    private final long outputLimit;
+    private final int outputAddress;
+    private final int outputLimit;
 
     private long container;
     private int bitCount;
-    private long currentAddress;
+    private int currentAddress;
 
-    public BitOutputStream(byte[] outputBase, long outputAddress, int outputSize)
+    public BitOutputStream(byte[] outputBase, int outputAddress, int outputSize)
     {
         checkArgument(outputSize >= SIZE_OF_LONG, "Output buffer too small");
 
@@ -64,7 +64,7 @@ class BitOutputStream
     {
         int bytes = bitCount >>> 3;
 
-        Mem.LONG_LE.set(outputBase, (int) currentAddress, container);
+        Mem.LONG_LE.set(outputBase, currentAddress, container);
         currentAddress += bytes;
 
         if (currentAddress > outputLimit) {
@@ -84,6 +84,6 @@ class BitOutputStream
             return 0;
         }
 
-        return (int) ((currentAddress - outputAddress) + (bitCount > 0 ? 1 : 0));
+        return (currentAddress - outputAddress) + (bitCount > 0 ? 1 : 0);
     }
 }

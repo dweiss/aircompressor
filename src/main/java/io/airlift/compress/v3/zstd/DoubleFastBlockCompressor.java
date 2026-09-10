@@ -24,8 +24,11 @@ class DoubleFastBlockCompressor
     private static final int REP_MOVE = Constants.REPEATED_OFFSET_COUNT - 1;
 
     @Override
-    public int compressBlock(byte[] inputBase, final long inputAddress, int inputSize, SequenceStore output, BlockCompressionState state, RepeatedOffsets offsets, CompressionParameters parameters)
+    public int compressBlock(byte[] inputBase, final int inputAddress, int inputSize, SequenceStore output, BlockCompressionState state, RepeatedOffsets offsets, CompressionParameters parameters)
     {
+        // Positions are held in longs in this loop on purpose. Every value is an int-range index into inputBase
+        // (bounded by inputAddress + inputSize), so the (int) casts at the access sites cannot truncate, but with
+        // int loop variables C2 generates measurably slower code for this method (about 10% on silesia/x-ray).
         int matchSearchLength = Math.max(parameters.getSearchLength(), 4);
 
         // Offsets in hash tables are relative to baseAddress. Hash tables can be reused across calls to compressBlock as long as
@@ -86,7 +89,7 @@ class DoubleFastBlockCompressor
                 // found a repeated sequence of at least 4 bytes, separated by offset1
                 matchLength = count(inputBase, input + 1 + SIZE_OF_INT, inputEnd, input + 1 + SIZE_OF_INT - offset1) + SIZE_OF_INT;
                 input++;
-                output.storeSequence(inputBase, anchor, (int) (input - anchor), 0, matchLength - MIN_MATCH);
+                output.storeSequence(inputBase, (int) anchor, (int) (input - anchor), 0, matchLength - MIN_MATCH);
             }
             else {
                 // check prefix long match
@@ -137,7 +140,7 @@ class DoubleFastBlockCompressor
                 offset2 = offset1;
                 offset1 = offset;
 
-                output.storeSequence(inputBase, anchor, (int) (input - anchor), offset + REP_MOVE, matchLength - MIN_MATCH);
+                output.storeSequence(inputBase, (int) anchor, (int) (input - anchor), offset + REP_MOVE, matchLength - MIN_MATCH);
             }
 
             input += matchLength;
@@ -162,7 +165,7 @@ class DoubleFastBlockCompressor
                     shortHashTable[hash(inputBase, input, shortHashBits, matchSearchLength)] = (int) (input - baseAddress);
                     longHashTable[hash8((long) Mem.LONG_LE.get(inputBase, (int) input), longHashBits)] = (int) (input - baseAddress);
 
-                    output.storeSequence(inputBase, anchor, 0, 0, repetitionLength - MIN_MATCH);
+                    output.storeSequence(inputBase, (int) anchor, 0, 0, repetitionLength - MIN_MATCH);
 
                     input += repetitionLength;
                     anchor = input;

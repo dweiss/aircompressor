@@ -28,7 +28,7 @@ class CompressionContext
 
     public final HuffmanCompressionContext huffmanContext = new HuffmanCompressionContext();
 
-    public CompressionContext(CompressionParameters parameters, long baseAddress, int inputSize)
+    public CompressionContext(CompressionParameters parameters, int baseAddress, int inputSize)
     {
         this.parameters = parameters;
 

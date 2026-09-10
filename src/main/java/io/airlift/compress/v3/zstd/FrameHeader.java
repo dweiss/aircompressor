@@ -22,13 +22,13 @@ import static java.lang.Math.toIntExact;
 
 class FrameHeader
 {
-    final long headerSize;
+    final int headerSize;
     final int windowSize;
     final long contentSize;
     final long dictionaryId;
     final boolean hasChecksum;
 
-    public FrameHeader(long headerSize, int windowSize, long contentSize, long dictionaryId, boolean hasChecksum)
+    public FrameHeader(int headerSize, int windowSize, long contentSize, long dictionaryId, boolean hasChecksum)
     {
         checkState(windowSize >= 0 || contentSize >= 0, "Invalid frame header: contentSize or windowSize must be set");
         this.headerSize = headerSize;

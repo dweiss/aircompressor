@@ -40,8 +40,8 @@ final class Mem
         return null;
     }
 
-    static void copyMemory(byte[] srcBase, long srcOffset, byte[] dstBase, long dstOffset, long length)
+    static void copyMemory(byte[] srcBase, int srcOffset, byte[] dstBase, int dstOffset, int length)
     {
-        System.arraycopy(srcBase, (int) srcOffset, dstBase, (int) dstOffset, (int) length);
+        System.arraycopy(srcBase, srcOffset, dstBase, dstOffset, length);
     }
 }

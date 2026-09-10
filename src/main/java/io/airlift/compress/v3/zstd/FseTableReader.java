@@ -23,17 +23,17 @@ class FseTableReader
     private final short[] nextSymbol = new short[MAX_SYMBOL + 1];
     private final short[] normalizedCounters = new short[MAX_SYMBOL + 1];
 
-    public int readFseTable(FiniteStateEntropy.Table table, byte[] inputBase, long inputAddress, long inputLimit, int maxSymbol, int maxTableLog)
+    public int readFseTable(FiniteStateEntropy.Table table, byte[] inputBase, int inputAddress, int inputLimit, int maxSymbol, int maxTableLog)
     {
         // read table headers
-        long input = inputAddress;
+        int input = inputAddress;
         verify(inputLimit - inputAddress >= 4, input, "Not enough input bytes");
 
         int threshold;
         int symbolNumber = 0;
         boolean previousIsZero = false;
 
-        int bitStream = (int) Mem.INT_LE.get(inputBase, (int) input);
+        int bitStream = (int) Mem.INT_LE.get(inputBase, input);
 
         int tableLog = (bitStream & 0xF) + MIN_TABLE_LOG;
 
@@ -53,7 +53,7 @@ class FseTableReader
                     n0 += 24;
                     if (input < inputLimit - 5) {
                         input += 2;
-                        bitStream = ((int) Mem.INT_LE.get(inputBase, (int) input) >>> bitCount);
+                        bitStream = ((int) Mem.INT_LE.get(inputBase, input) >>> bitCount);
                     }
                     else {
                         // end of bit stream
@@ -77,7 +77,7 @@ class FseTableReader
                 if ((input <= inputLimit - 7) || (input + (bitCount >>> 3) <= inputLimit - 4)) {
                     input += bitCount >>> 3;
                     bitCount &= 7;
-                    bitStream = (int) Mem.INT_LE.get(inputBase, (int) input) >>> bitCount;
+                    bitStream = (int) Mem.INT_LE.get(inputBase, input) >>> bitCount;
                 }
                 else {
                     bitStream >>>= 2;
@@ -113,10 +113,10 @@ class FseTableReader
                 bitCount &= 7;
             }
             else {
-                bitCount -= (int) (8 * (inputLimit - 4 - input));
+                bitCount -= 8 * (inputLimit - 4 - input);
                 input = inputLimit - 4;
             }
-            bitStream = (int) Mem.INT_LE.get(inputBase, (int) input) >>> (bitCount & 31);
+            bitStream = (int) Mem.INT_LE.get(inputBase, input) >>> (bitCount & 31);
         }
 
         verify(remaining == 1 && bitCount <= 32, input, "Input is corrupted");
@@ -155,7 +155,7 @@ class FseTableReader
             table.newState[i] = (short) ((nextState << table.numberOfBits[i]) - tableSize);
         }
 
-        return (int) (input - inputAddress);
+        return input - inputAddress;
     }
 
     public static void initializeRleTable(FiniteStateEntropy.Table table, byte value)

@@ -20,12 +20,12 @@ class BlockCompressionState
     public final int[] hashTable;
     public final int[] chainTable;
 
-    private final long baseAddress;
+    private final int baseAddress;
 
     // starting point of the window with respect to baseAddress
     private int windowBaseOffset;
 
-    public BlockCompressionState(CompressionParameters parameters, long baseAddress)
+    public BlockCompressionState(CompressionParameters parameters, int baseAddress)
     {
         this.baseAddress = baseAddress;
         hashTable = new int[1 << parameters.getHashLog()];
@@ -54,9 +54,9 @@ class BlockCompressionState
         Arrays.fill(chainTable, 0);
     }
 
-    public void enforceMaxDistance(long inputLimit, int maxDistance)
+    public void enforceMaxDistance(int inputLimit, int maxDistance)
     {
-        int distance = (int) (inputLimit - baseAddress);
+        int distance = inputLimit - baseAddress;
 
         int newOffset = distance - maxDistance;
         if (windowBaseOffset < newOffset) {
@@ -64,7 +64,7 @@ class BlockCompressionState
         }
     }
 
-    public long getBaseAddress()
+    public int getBaseAddress()
     {
         return baseAddress;
     }

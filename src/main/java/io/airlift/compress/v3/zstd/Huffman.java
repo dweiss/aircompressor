@@ -48,14 +48,14 @@ class Huffman
         return tableLog != -1;
     }
 
-    public int readTable(final byte[] inputBase, final long inputAddress, final int size)
+    public int readTable(final byte[] inputBase, final int inputAddress, final int size)
     {
         Arrays.fill(ranks, 0);
-        long input = inputAddress;
+        int input = inputAddress;
 
         // read table header
         verify(size > 0, input, "Not enough input bytes");
-        int inputSize = inputBase[(int) (input++)] & 0xFF;
+        int inputSize = inputBase[input++] & 0xFF;
 
         int outputSize;
         if (inputSize >= 128) {
@@ -66,7 +66,7 @@ class Huffman
             verify(outputSize <= MAX_SYMBOL + 1, input, "Input is corrupted");
 
             for (int i = 0; i < outputSize; i += 2) {
-                int value = inputBase[(int) (input + i / 2)] & 0xFF;
+                int value = inputBase[input + i / 2] & 0xFF;
                 weights[i] = (byte) (value >>> 4);
                 weights[i + 1] = (byte) (value & 0b1111);
             }
@@ -74,7 +74,7 @@ class Huffman
         else {
             verify(inputSize + 1 <= size, input, "Not enough input bytes");
 
-            long inputLimit = input + inputSize;
+            int inputLimit = input + inputSize;
             input += reader.readFseTable(fseTable, inputBase, input, inputLimit, FiniteStateEntropy.MAX_SYMBOL, MAX_FSE_TABLE_LOG);
             outputSize = FiniteStateEntropy.decompress(fseTable, inputBase, input, inputLimit, weights);
         }
@@ -126,22 +126,22 @@ class Huffman
         return inputSize + 1;
     }
 
-    public void decodeSingleStream(final byte[] inputBase, final long inputAddress, final long inputLimit, final byte[] outputBase, final long outputAddress, final long outputLimit)
+    public void decodeSingleStream(final byte[] inputBase, final int inputAddress, final int inputLimit, final byte[] outputBase, final int outputAddress, final int outputLimit)
     {
         BitInputStream.Initializer initializer = new BitInputStream.Initializer(inputBase, inputAddress, inputLimit);
         initializer.initialize();
 
         long bits = initializer.getBits();
         int bitsConsumed = initializer.getBitsConsumed();
-        long currentAddress = initializer.getCurrentAddress();
+        int currentAddress = initializer.getCurrentAddress();
 
         int tableLog = this.tableLog;
         byte[] numbersOfBits = this.numbersOfBits;
         byte[] symbols = this.symbols;
 
         // 4 symbols at a time
-        long output = outputAddress;
-        long fastOutputLimit = outputLimit - 4;
+        int output = outputAddress;
+        int fastOutputLimit = outputLimit - 4;
         while (output < fastOutputLimit) {
             BitInputStream.Loader loader = new BitInputStream.Loader(inputBase, inputAddress, currentAddress, bits, bitsConsumed);
             boolean done = loader.load();
@@ -162,53 +162,53 @@ class Huffman
         decodeTail(inputBase, inputAddress, currentAddress, bitsConsumed, bits, outputBase, output, outputLimit);
     }
 
-    public void decode4Streams(final byte[] inputBase, final long inputAddress, final long inputLimit, final byte[] outputBase, final long outputAddress, final long outputLimit)
+    public void decode4Streams(final byte[] inputBase, final int inputAddress, final int inputLimit, final byte[] outputBase, final int outputAddress, final int outputLimit)
     {
         verify(inputLimit - inputAddress >= 10, inputAddress, "Input is corrupted"); // jump table + 1 byte per stream
 
-        long start1 = inputAddress + 3 * SIZE_OF_SHORT; // for the shorts we read below
-        long start2 = start1 + ((short) Mem.SHORT_LE.get(inputBase, (int) inputAddress) & 0xFFFF);
-        long start3 = start2 + ((short) Mem.SHORT_LE.get(inputBase, (int) (inputAddress + 2)) & 0xFFFF);
-        long start4 = start3 + ((short) Mem.SHORT_LE.get(inputBase, (int) (inputAddress + 4)) & 0xFFFF);
+        int start1 = inputAddress + 3 * SIZE_OF_SHORT; // for the shorts we read below
+        int start2 = start1 + ((short) Mem.SHORT_LE.get(inputBase, inputAddress) & 0xFFFF);
+        int start3 = start2 + ((short) Mem.SHORT_LE.get(inputBase, inputAddress + 2) & 0xFFFF);
+        int start4 = start3 + ((short) Mem.SHORT_LE.get(inputBase, inputAddress + 4) & 0xFFFF);
 
         verify(start2 < start3 && start3 < start4 && start4 < inputLimit, inputAddress, "Input is corrupted");
 
         BitInputStream.Initializer initializer = new BitInputStream.Initializer(inputBase, start1, start2);
         initializer.initialize();
         int stream1bitsConsumed = initializer.getBitsConsumed();
-        long stream1currentAddress = initializer.getCurrentAddress();
+        int stream1currentAddress = initializer.getCurrentAddress();
         long stream1bits = initializer.getBits();
 
         initializer = new BitInputStream.Initializer(inputBase, start2, start3);
         initializer.initialize();
         int stream2bitsConsumed = initializer.getBitsConsumed();
-        long stream2currentAddress = initializer.getCurrentAddress();
+        int stream2currentAddress = initializer.getCurrentAddress();
         long stream2bits = initializer.getBits();
 
         initializer = new BitInputStream.Initializer(inputBase, start3, start4);
         initializer.initialize();
         int stream3bitsConsumed = initializer.getBitsConsumed();
-        long stream3currentAddress = initializer.getCurrentAddress();
+        int stream3currentAddress = initializer.getCurrentAddress();
         long stream3bits = initializer.getBits();
 
         initializer = new BitInputStream.Initializer(inputBase, start4, inputLimit);
         initializer.initialize();
         int stream4bitsConsumed = initializer.getBitsConsumed();
-        long stream4currentAddress = initializer.getCurrentAddress();
+        int stream4currentAddress = initializer.getCurrentAddress();
         long stream4bits = initializer.getBits();
 
-        int segmentSize = (int) ((outputLimit - outputAddress + 3) / 4);
+        int segmentSize = (outputLimit - outputAddress + 3) / 4;
 
-        long outputStart2 = outputAddress + segmentSize;
-        long outputStart3 = outputStart2 + segmentSize;
-        long outputStart4 = outputStart3 + segmentSize;
+        int outputStart2 = outputAddress + segmentSize;
+        int outputStart3 = outputStart2 + segmentSize;
+        int outputStart4 = outputStart3 + segmentSize;
 
-        long output1 = outputAddress;
-        long output2 = outputStart2;
-        long output3 = outputStart3;
-        long output4 = outputStart4;
+        int output1 = outputAddress;
+        int output2 = outputStart2;
+        int output3 = outputStart3;
+        int output4 = outputStart4;
 
-        long fastOutputLimit = outputLimit - 7;
+        int fastOutputLimit = outputLimit - 7;
         int tableLog = this.tableLog;
         byte[] numbersOfBits = this.numbersOfBits;
         byte[] symbols = this.symbols;
@@ -272,7 +272,7 @@ class Huffman
         decodeTail(inputBase, start4, stream4currentAddress, stream4bitsConsumed, stream4bits, outputBase, output4, outputLimit);
     }
 
-    private void decodeTail(final byte[] inputBase, final long startAddress, long currentAddress, int bitsConsumed, long bits, final byte[] outputBase, long outputAddress, final long outputLimit)
+    private void decodeTail(final byte[] inputBase, final int startAddress, int currentAddress, int bitsConsumed, long bits, final byte[] outputBase, int outputAddress, final int outputLimit)
     {
         int tableLog = this.tableLog;
         byte[] numbersOfBits = this.numbersOfBits;
@@ -301,7 +301,7 @@ class Huffman
     }
 
     // Decodes 4 symbols and writes them with a single int store (one bounds check instead of four).
-    private static int decode4Symbols(byte[] outputBase, long outputAddress, long bitContainer, int bitsConsumed, int tableLog, byte[] numbersOfBits, byte[] symbols)
+    private static int decode4Symbols(byte[] outputBase, int outputAddress, long bitContainer, int bitsConsumed, int tableLog, byte[] numbersOfBits, byte[] symbols)
     {
         int value = (int) peekBitsFast(bitsConsumed, bitContainer, tableLog);
         int packed = symbols[value] & 0xFF;
@@ -319,14 +319,14 @@ class Huffman
         packed |= (symbols[value] & 0xFF) << 24;
         bitsConsumed += numbersOfBits[value];
 
-        Mem.INT_LE.set(outputBase, (int) outputAddress, packed);
+        Mem.INT_LE.set(outputBase, outputAddress, packed);
         return bitsConsumed;
     }
 
-    private static int decodeSymbol(byte[] outputBase, long outputAddress, long bitContainer, int bitsConsumed, int tableLog, byte[] numbersOfBits, byte[] symbols)
+    private static int decodeSymbol(byte[] outputBase, int outputAddress, long bitContainer, int bitsConsumed, int tableLog, byte[] numbersOfBits, byte[] symbols)
     {
         int value = (int) peekBitsFast(bitsConsumed, bitContainer, tableLog);
-        outputBase[(int) outputAddress] = symbols[value];
+        outputBase[outputAddress] = symbols[value];
         return bitsConsumed + numbersOfBits[value];
     }
 }

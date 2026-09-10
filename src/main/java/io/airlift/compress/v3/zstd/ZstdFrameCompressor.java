@@ -47,20 +47,20 @@ final class ZstdFrameCompressor
     }
 
     // visible for testing
-    static int writeMagic(final byte[] outputBase, final long outputAddress, final long outputLimit)
+    static int writeMagic(final byte[] outputBase, final int outputAddress, final int outputLimit)
     {
         checkArgument(outputLimit - outputAddress >= SIZE_OF_INT, "Output buffer too small");
 
-        Mem.INT_LE.set(outputBase, (int) outputAddress, MAGIC_NUMBER);
+        Mem.INT_LE.set(outputBase, outputAddress, MAGIC_NUMBER);
         return SIZE_OF_INT;
     }
 
     // visible for testing
-    static int writeFrameHeader(final byte[] outputBase, final long outputAddress, final long outputLimit, int inputSize, int windowSize)
+    static int writeFrameHeader(final byte[] outputBase, final int outputAddress, final int outputLimit, int inputSize, int windowSize)
     {
         checkArgument(outputLimit - outputAddress >= MAX_FRAME_HEADER_SIZE, "Output buffer too small");
 
-        long output = outputAddress;
+        int output = outputAddress;
 
         int contentSizeDescriptor = 0;
         if (inputSize != -1) {
@@ -73,7 +73,7 @@ final class ZstdFrameCompressor
             frameHeaderDescriptor |= SINGLE_SEGMENT_FLAG;
         }
 
-        outputBase[(int) output] = (byte) frameHeaderDescriptor;
+        outputBase[output] = (byte) frameHeaderDescriptor;
         output++;
 
         if (!singleSegment) {
@@ -93,69 +93,69 @@ final class ZstdFrameCompressor
             int mantissa = remainder / (base / 8);
             int encoded = ((exponent - MIN_WINDOW_LOG) << 3) | mantissa;
 
-            outputBase[(int) output] = (byte) encoded;
+            outputBase[output] = (byte) encoded;
             output++;
         }
 
         switch (contentSizeDescriptor) {
             case 0 -> {
                 if (singleSegment) {
-                    outputBase[(int) (output++)] = (byte) inputSize;
+                    outputBase[output++] = (byte) inputSize;
                 }
             }
             case 1 -> {
-                Mem.SHORT_LE.set(outputBase, (int) output, (short) (inputSize - 256));
+                Mem.SHORT_LE.set(outputBase, output, (short) (inputSize - 256));
                 output += SIZE_OF_SHORT;
             }
             case 2 -> {
-                Mem.INT_LE.set(outputBase, (int) output, inputSize);
+                Mem.INT_LE.set(outputBase, output, inputSize);
                 output += SIZE_OF_INT;
             }
             default -> throw new AssertionError();
         }
 
-        return (int) (output - outputAddress);
+        return output - outputAddress;
     }
 
     // visible for testing
-    static int writeChecksum(byte[] outputBase, long outputAddress, long outputLimit, byte[] inputBase, long inputAddress, long inputLimit)
+    static int writeChecksum(byte[] outputBase, int outputAddress, int outputLimit, byte[] inputBase, int inputAddress, int inputLimit)
     {
         checkArgument(outputLimit - outputAddress >= SIZE_OF_INT, "Output buffer too small");
 
-        int inputSize = (int) (inputLimit - inputAddress);
+        int inputSize = inputLimit - inputAddress;
 
         long hash = XxHash64.hash(0, inputBase, inputAddress, inputSize);
 
-        Mem.INT_LE.set(outputBase, (int) outputAddress, (int) hash);
+        Mem.INT_LE.set(outputBase, outputAddress, (int) hash);
 
         return SIZE_OF_INT;
     }
 
-    public static int compress(byte[] inputBase, long inputAddress, long inputLimit, byte[] outputBase, long outputAddress, long outputLimit, int compressionLevel)
+    public static int compress(byte[] inputBase, int inputAddress, int inputLimit, byte[] outputBase, int outputAddress, int outputLimit, int compressionLevel)
     {
-        int inputSize = (int) (inputLimit - inputAddress);
+        int inputSize = inputLimit - inputAddress;
 
         CompressionParameters parameters = CompressionParameters.compute(compressionLevel, inputSize);
 
-        long output = outputAddress;
+        int output = outputAddress;
 
         output += writeMagic(outputBase, output, outputLimit);
         output += writeFrameHeader(outputBase, output, outputLimit, inputSize, parameters.getWindowSize());
         output += compressFrame(inputBase, inputAddress, inputLimit, outputBase, output, outputLimit, parameters);
         output += writeChecksum(outputBase, output, outputLimit, inputBase, inputAddress, inputLimit);
 
-        return (int) (output - outputAddress);
+        return output - outputAddress;
     }
 
-    private static int compressFrame(byte[] inputBase, long inputAddress, long inputLimit, byte[] outputBase, long outputAddress, long outputLimit, CompressionParameters parameters)
+    private static int compressFrame(byte[] inputBase, int inputAddress, int inputLimit, byte[] outputBase, int outputAddress, int outputLimit, CompressionParameters parameters)
     {
         int blockSize = parameters.getBlockSize();
 
-        int outputSize = (int) (outputLimit - outputAddress);
-        int remaining = (int) (inputLimit - inputAddress);
+        int outputSize = outputLimit - outputAddress;
+        int remaining = inputLimit - inputAddress;
 
-        long output = outputAddress;
-        long input = inputAddress;
+        int output = outputAddress;
+        int input = inputAddress;
 
         CompressionContext context = new CompressionContext(parameters, inputAddress, remaining);
         do {
@@ -173,10 +173,10 @@ final class ZstdFrameCompressor
         }
         while (remaining > 0);
 
-        return (int) (output - outputAddress);
+        return output - outputAddress;
     }
 
-    static int writeCompressedBlock(byte[] inputBase, long input, int blockSize, byte[] outputBase, long output, int outputSize, CompressionContext context, boolean lastBlock)
+    static int writeCompressedBlock(byte[] inputBase, int input, int blockSize, byte[] outputBase, int output, int outputSize, CompressionContext context, boolean lastBlock)
     {
         checkArgument(lastBlock || blockSize == context.parameters.getBlockSize(), "Only last block can be smaller than block size");
 
@@ -201,7 +201,7 @@ final class ZstdFrameCompressor
         return compressedSize;
     }
 
-    private static int compressBlock(byte[] inputBase, long inputAddress, int inputSize, byte[] outputBase, long outputAddress, int outputSize, CompressionContext context)
+    private static int compressBlock(byte[] inputBase, int inputAddress, int inputSize, byte[] outputBase, int outputAddress, int outputSize, CompressionContext context)
     {
         if (inputSize < MIN_BLOCK_SIZE + SIZE_OF_BLOCK_HEADER + 1) {
             //  don't even attempt compression below a certain input size
@@ -216,7 +216,7 @@ final class ZstdFrameCompressor
                 .getCompressor()
                 .compressBlock(inputBase, inputAddress, inputSize, context.sequenceStore, context.blockCompressionState, context.offsets, parameters);
 
-        long lastLiteralsAddress = inputAddress + inputSize - lastLiteralsSize;
+        int lastLiteralsAddress = inputAddress + inputSize - lastLiteralsSize;
 
         // append [lastLiteralsAddress .. lastLiteralsSize] to sequenceStore literals buffer
         context.sequenceStore.appendLiterals(inputBase, lastLiteralsAddress, lastLiteralsSize);
@@ -224,20 +224,20 @@ final class ZstdFrameCompressor
         // convert length/offsets into codes
         context.sequenceStore.generateCodes();
 
-        long outputLimit = outputAddress + outputSize;
-        long output = outputAddress;
+        int outputLimit = outputAddress + outputSize;
+        int output = outputAddress;
 
         int compressedLiteralsSize = encodeLiterals(
                 context.huffmanContext,
                 parameters,
                 outputBase,
                 output,
-                (int) (outputLimit - output),
+                outputLimit - output,
                 context.sequenceStore.literalsBuffer,
                 context.sequenceStore.literalsLength);
         output += compressedLiteralsSize;
 
-        int compressedSequencesSize = SequenceEncoder.compressSequences(outputBase, output, (int) (outputLimit - output), context.sequenceStore, parameters.getStrategy(), context.sequenceEncodingContext);
+        int compressedSequencesSize = SequenceEncoder.compressSequences(outputBase, output, outputLimit - output, context.sequenceStore, parameters.getStrategy(), context.sequenceEncodingContext);
 
         int compressedSize = compressedLiteralsSize + compressedSequencesSize;
         if (compressedSize == 0) {
@@ -261,7 +261,7 @@ final class ZstdFrameCompressor
             HuffmanCompressionContext context,
             CompressionParameters parameters,
             byte[] outputBase,
-            long outputAddress,
+            int outputAddress,
             int outputSize,
             byte[] literals,
             int literalsSize)
@@ -269,7 +269,7 @@ final class ZstdFrameCompressor
         // TODO: move this to Strategy
         boolean bypassCompression = (parameters.getStrategy() == CompressionParameters.Strategy.FAST) && (parameters.getTargetLength() > 0);
         if (bypassCompression || literalsSize <= MINIMUM_LITERALS_SIZE) {
-            return rawLiterals(outputBase, outputAddress, outputSize, literals, 0L, literalsSize);
+            return rawLiterals(outputBase, outputAddress, outputSize, literals, 0, literalsSize);
         }
 
         int headerSize = 3 + (literalsSize >= 1024 ? 1 : 0) + (literalsSize >= 16384 ? 1 : 0);
@@ -281,14 +281,14 @@ final class ZstdFrameCompressor
         int maxSymbol = Histogram.findMaxSymbol(counts, MAX_SYMBOL);
         int largestCount = Histogram.findLargestCount(counts, maxSymbol);
 
-        long literalsAddress = 0L;
+        int literalsAddress = 0;
         if (largestCount == literalsSize) {
             // all bytes in input are equal
-            return rleLiterals(outputBase, outputAddress, outputSize, literals, 0L, literalsSize);
+            return rleLiterals(outputBase, outputAddress, outputSize, literals, 0, literalsSize);
         }
         else if (largestCount <= (literalsSize >>> 7) + 4) {
             // heuristic: probably not compressible enough
-            return rawLiterals(outputBase, outputAddress, outputSize, literals, 0L, literalsSize);
+            return rawLiterals(outputBase, outputAddress, outputSize, literals, 0, literalsSize);
         }
 
         HuffmanCompressionTable previousTable = context.getPreviousTable();
@@ -348,7 +348,7 @@ final class ZstdFrameCompressor
             // discard any temporary table we might have borrowed above
             context.discardTemporaryTable();
 
-            return rawLiterals(outputBase, outputAddress, outputSize, literals, 0L, literalsSize);
+            return rawLiterals(outputBase, outputAddress, outputSize, literals, 0, literalsSize);
         }
 
         int encodingType = reuseTable ? TREELESS_LITERALS_BLOCK : COMPRESSED_LITERALS_BLOCK;
@@ -361,12 +361,12 @@ final class ZstdFrameCompressor
             }
             case 4 -> { // 2 - 2 - 14 - 14
                 int header = encodingType | (2 << 2) | (literalsSize << 4) | (totalSize << 18);
-                Mem.INT_LE.set(outputBase, (int) outputAddress, header);
+                Mem.INT_LE.set(outputBase, outputAddress, header);
             }
             case 5 -> { // 2 - 2 - 18 - 18
                 int header = encodingType | (3 << 2) | (literalsSize << 4) | (totalSize << 22);
-                Mem.INT_LE.set(outputBase, (int) outputAddress, header);
-                outputBase[(int) (outputAddress + SIZE_OF_INT)] = (byte) (totalSize >>> 10);
+                Mem.INT_LE.set(outputBase, outputAddress, header);
+                outputBase[outputAddress + SIZE_OF_INT] = (byte) (totalSize >>> 10);
             }
             default ->  // not possible : headerSize is {3,4,5}
                     throw new IllegalStateException();
@@ -375,22 +375,22 @@ final class ZstdFrameCompressor
         return headerSize + totalSize;
     }
 
-    private static int rleLiterals(byte[] outputBase, long outputAddress, int outputSize, byte[] inputBase, long inputAddress, int inputSize)
+    private static int rleLiterals(byte[] outputBase, int outputAddress, int outputSize, byte[] inputBase, int inputAddress, int inputSize)
     {
         int headerSize = 1 + (inputSize > 31 ? 1 : 0) + (inputSize > 4095 ? 1 : 0);
 
         switch (headerSize) {
             case 1 -> // 2 - 1 - 5
-                    outputBase[(int) outputAddress] = (byte) (RLE_LITERALS_BLOCK | (inputSize << 3));
+                    outputBase[outputAddress] = (byte) (RLE_LITERALS_BLOCK | (inputSize << 3));
             case 2 -> // 2 - 2 - 12
-                    Mem.SHORT_LE.set(outputBase, (int) outputAddress, (short) (RLE_LITERALS_BLOCK | (1 << 2) | (inputSize << 4)));
+                    Mem.SHORT_LE.set(outputBase, outputAddress, (short) (RLE_LITERALS_BLOCK | (1 << 2) | (inputSize << 4)));
             case 3 -> // 2 - 2 - 20
-                    Mem.INT_LE.set(outputBase, (int) outputAddress, RLE_LITERALS_BLOCK | 3 << 2 | inputSize << 4);
+                    Mem.INT_LE.set(outputBase, outputAddress, RLE_LITERALS_BLOCK | 3 << 2 | inputSize << 4);
             default -> // impossible. headerSize is {1,2,3}
                     throw new IllegalStateException();
         }
 
-        outputBase[(int) (outputAddress + headerSize)] = inputBase[(int) inputAddress];
+        outputBase[outputAddress + headerSize] = inputBase[inputAddress];
 
         return headerSize + 1;
     }
@@ -402,7 +402,7 @@ final class ZstdFrameCompressor
         return (inputSize >>> minLog) + 2;
     }
 
-    private static int rawLiterals(byte[] outputBase, long outputAddress, int outputSize, byte[] inputBase, long inputAddress, int inputSize)
+    private static int rawLiterals(byte[] outputBase, int outputAddress, int outputSize, byte[] inputBase, int inputAddress, int inputSize)
     {
         int headerSize = 1;
         if (inputSize >= 32) {
@@ -415,8 +415,8 @@ final class ZstdFrameCompressor
         checkArgument(inputSize + headerSize <= outputSize, "Output buffer too small");
 
         switch (headerSize) {
-            case 1 -> outputBase[(int) outputAddress] = (byte) (RAW_LITERALS_BLOCK | (inputSize << 3));
-            case 2 -> Mem.SHORT_LE.set(outputBase, (int) outputAddress, (short) (RAW_LITERALS_BLOCK | (1 << 2) | (inputSize << 4)));
+            case 1 -> outputBase[outputAddress] = (byte) (RAW_LITERALS_BLOCK | (inputSize << 3));
+            case 2 -> Mem.SHORT_LE.set(outputBase, outputAddress, (short) (RAW_LITERALS_BLOCK | (1 << 2) | (inputSize << 4)));
             case 3 -> put24BitLittleEndian(outputBase, outputAddress, RAW_LITERALS_BLOCK | (3 << 2) | (inputSize << 4));
             default -> throw new AssertionError();
         }

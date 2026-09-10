@@ -22,12 +22,12 @@ final class HuffmanCompressor
     {
     }
 
-    public static int compress4streams(byte[] outputBase, long outputAddress, int outputSize, byte[] inputBase, long inputAddress, int inputSize, HuffmanCompressionTable table)
+    public static int compress4streams(byte[] outputBase, int outputAddress, int outputSize, byte[] inputBase, int inputAddress, int inputSize, HuffmanCompressionTable table)
     {
-        long input = inputAddress;
-        long inputLimit = inputAddress + inputSize;
-        long output = outputAddress;
-        long outputLimit = outputAddress + outputSize;
+        int input = inputAddress;
+        int inputLimit = inputAddress + inputSize;
+        int output = outputAddress;
+        int outputLimit = outputAddress + outputSize;
 
         int segmentSize = (inputSize + 3) / 4;
 
@@ -44,68 +44,68 @@ final class HuffmanCompressor
         int compressedSize;
 
         // first segment
-        compressedSize = compressSingleStream(outputBase, output, (int) (outputLimit - output), inputBase, input, segmentSize, table);
+        compressedSize = compressSingleStream(outputBase, output, outputLimit - output, inputBase, input, segmentSize, table);
         if (compressedSize == 0) {
             return 0;
         }
-        Mem.SHORT_LE.set(outputBase, (int) outputAddress, (short) compressedSize);
+        Mem.SHORT_LE.set(outputBase, outputAddress, (short) compressedSize);
         output += compressedSize;
         input += segmentSize;
 
         // second segment
-        compressedSize = compressSingleStream(outputBase, output, (int) (outputLimit - output), inputBase, input, segmentSize, table);
+        compressedSize = compressSingleStream(outputBase, output, outputLimit - output, inputBase, input, segmentSize, table);
         if (compressedSize == 0) {
             return 0;
         }
-        Mem.SHORT_LE.set(outputBase, (int) (outputAddress + SIZE_OF_SHORT), (short) compressedSize);
+        Mem.SHORT_LE.set(outputBase, outputAddress + SIZE_OF_SHORT, (short) compressedSize);
         output += compressedSize;
         input += segmentSize;
 
         // third segment
-        compressedSize = compressSingleStream(outputBase, output, (int) (outputLimit - output), inputBase, input, segmentSize, table);
+        compressedSize = compressSingleStream(outputBase, output, outputLimit - output, inputBase, input, segmentSize, table);
         if (compressedSize == 0) {
             return 0;
         }
-        Mem.SHORT_LE.set(outputBase, (int) (outputAddress + SIZE_OF_SHORT + SIZE_OF_SHORT), (short) compressedSize);
+        Mem.SHORT_LE.set(outputBase, outputAddress + SIZE_OF_SHORT + SIZE_OF_SHORT, (short) compressedSize);
         output += compressedSize;
         input += segmentSize;
 
         // fourth segment
-        compressedSize = compressSingleStream(outputBase, output, (int) (outputLimit - output), inputBase, input, (int) (inputLimit - input), table);
+        compressedSize = compressSingleStream(outputBase, output, outputLimit - output, inputBase, input, inputLimit - input, table);
         if (compressedSize == 0) {
             return 0;
         }
         output += compressedSize;
 
-        return (int) (output - outputAddress);
+        return output - outputAddress;
     }
 
-    public static int compressSingleStream(byte[] outputBase, long outputAddress, int outputSize, byte[] inputBase, long inputAddress, int inputSize, HuffmanCompressionTable table)
+    public static int compressSingleStream(byte[] outputBase, int outputAddress, int outputSize, byte[] inputBase, int inputAddress, int inputSize, HuffmanCompressionTable table)
     {
         if (outputSize < SIZE_OF_LONG) {
             return 0;
         }
 
         BitOutputStream bitstream = new BitOutputStream(outputBase, outputAddress, outputSize);
-        long input = inputAddress;
+        int input = inputAddress;
 
         int n = inputSize & ~3; // join to mod 4
 
         switch (inputSize & 3) {
             case 3:
-                table.encodeSymbol(bitstream, inputBase[(int) (input + n + 2)] & 0xFF);
+                table.encodeSymbol(bitstream, inputBase[input + n + 2] & 0xFF);
                 if (SIZE_OF_LONG * 8 < Huffman.MAX_TABLE_LOG * 4 + 7) {
                     bitstream.flush();
                 }
                 // fall-through
             case 2:
-                table.encodeSymbol(bitstream, inputBase[(int) (input + n + 1)] & 0xFF);
+                table.encodeSymbol(bitstream, inputBase[input + n + 1] & 0xFF);
                 if (SIZE_OF_LONG * 8 < Huffman.MAX_TABLE_LOG * 2 + 7) {
                     bitstream.flush();
                 }
                 // fall-through
             case 1:
-                table.encodeSymbol(bitstream, inputBase[(int) (input + n + 0)] & 0xFF);
+                table.encodeSymbol(bitstream, inputBase[input + n + 0] & 0xFF);
                 bitstream.flush();
                 // fall-through
             case 0: /* fall-through */
@@ -114,19 +114,19 @@ final class HuffmanCompressor
         }
 
         for (; n > 0; n -= 4) {  // note: n & 3 == 0 at this stage
-            table.encodeSymbol(bitstream, inputBase[(int) (input + n - 1)] & 0xFF);
+            table.encodeSymbol(bitstream, inputBase[input + n - 1] & 0xFF);
             if (SIZE_OF_LONG * 8 < Huffman.MAX_TABLE_LOG * 2 + 7) {
                 bitstream.flush();
             }
-            table.encodeSymbol(bitstream, inputBase[(int) (input + n - 2)] & 0xFF);
+            table.encodeSymbol(bitstream, inputBase[input + n - 2] & 0xFF);
             if (SIZE_OF_LONG * 8 < Huffman.MAX_TABLE_LOG * 4 + 7) {
                 bitstream.flush();
             }
-            table.encodeSymbol(bitstream, inputBase[(int) (input + n - 3)] & 0xFF);
+            table.encodeSymbol(bitstream, inputBase[input + n - 3] & 0xFF);
             if (SIZE_OF_LONG * 8 < Huffman.MAX_TABLE_LOG * 2 + 7) {
                 bitstream.flush();
             }
-            table.encodeSymbol(bitstream, inputBase[(int) (input + n - 4)] & 0xFF);
+            table.encodeSymbol(bitstream, inputBase[input + n - 4] & 0xFF);
             bitstream.flush();
         }
 

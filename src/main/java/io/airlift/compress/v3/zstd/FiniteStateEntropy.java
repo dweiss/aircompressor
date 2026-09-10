@@ -33,20 +33,20 @@ final class FiniteStateEntropy
     {
     }
 
-    public static int decompress(FiniteStateEntropy.Table table, final byte[] inputBase, final long inputAddress, final long inputLimit, byte[] outputBuffer)
+    public static int decompress(FiniteStateEntropy.Table table, final byte[] inputBase, final int inputAddress, final int inputLimit, byte[] outputBuffer)
     {
         final byte[] outputBase = outputBuffer;
-        final long outputAddress = 0L;
-        final long outputLimit = outputAddress + outputBuffer.length;
+        final int outputAddress = 0;
+        final int outputLimit = outputAddress + outputBuffer.length;
 
-        long input = inputAddress;
-        long output = outputAddress;
+        int input = inputAddress;
+        int output = outputAddress;
 
         // initialize bit stream
         BitInputStream.Initializer initializer = new BitInputStream.Initializer(inputBase, input, inputLimit);
         initializer.initialize();
         int bitsConsumed = initializer.getBitsConsumed();
-        long currentAddress = initializer.getCurrentAddress();
+        int currentAddress = initializer.getCurrentAddress();
         long bits = initializer.getBits();
 
         // initialize first FSE stream
@@ -77,22 +77,22 @@ final class FiniteStateEntropy
         while (output <= outputLimit - 4) {
             int numberOfBits;
 
-            outputBase[(int) output] = symbols[state1];
+            outputBase[output] = symbols[state1];
             numberOfBits = numbersOfBits[state1];
             state1 = (int) (newStates[state1] + peekBits(bitsConsumed, bits, numberOfBits));
             bitsConsumed += numberOfBits;
 
-            outputBase[(int) (output + 1)] = symbols[state2];
+            outputBase[output + 1] = symbols[state2];
             numberOfBits = numbersOfBits[state2];
             state2 = (int) (newStates[state2] + peekBits(bitsConsumed, bits, numberOfBits));
             bitsConsumed += numberOfBits;
 
-            outputBase[(int) (output + 2)] = symbols[state1];
+            outputBase[output + 2] = symbols[state1];
             numberOfBits = numbersOfBits[state1];
             state1 = (int) (newStates[state1] + peekBits(bitsConsumed, bits, numberOfBits));
             bitsConsumed += numberOfBits;
 
-            outputBase[(int) (output + 3)] = symbols[state2];
+            outputBase[output + 3] = symbols[state2];
             numberOfBits = numbersOfBits[state2];
             state2 = (int) (newStates[state2] + peekBits(bitsConsumed, bits, numberOfBits));
             bitsConsumed += numberOfBits;
@@ -111,7 +111,7 @@ final class FiniteStateEntropy
 
         while (true) {
             verify(output <= outputLimit - 2, input, "Output buffer is too small");
-            outputBase[(int) (output++)] = symbols[state1];
+            outputBase[output++] = symbols[state1];
             int numberOfBits = numbersOfBits[state1];
             state1 = (int) (newStates[state1] + peekBits(bitsConsumed, bits, numberOfBits));
             bitsConsumed += numberOfBits;
@@ -123,12 +123,12 @@ final class FiniteStateEntropy
             currentAddress = loader.getCurrentAddress();
 
             if (loader.isOverflow()) {
-                outputBase[(int) (output++)] = symbols[state2];
+                outputBase[output++] = symbols[state2];
                 break;
             }
 
             verify(output <= outputLimit - 2, input, "Output buffer is too small");
-            outputBase[(int) (output++)] = symbols[state2];
+            outputBase[output++] = symbols[state2];
             int numberOfBits1 = numbersOfBits[state2];
             state2 = (int) (newStates[state2] + peekBits(bitsConsumed, bits, numberOfBits1));
             bitsConsumed += numberOfBits1;
@@ -140,27 +140,27 @@ final class FiniteStateEntropy
             currentAddress = loader.getCurrentAddress();
 
             if (loader.isOverflow()) {
-                outputBase[(int) (output++)] = symbols[state1];
+                outputBase[output++] = symbols[state1];
                 break;
             }
         }
 
-        return (int) (output - outputAddress);
+        return output - outputAddress;
     }
 
-    public static int compress(byte[] outputBase, long outputAddress, int outputSize, byte[] input, int inputSize, FseCompressionTable table)
+    public static int compress(byte[] outputBase, int outputAddress, int outputSize, byte[] input, int inputSize, FseCompressionTable table)
     {
-        return compress(outputBase, outputAddress, outputSize, input, 0L, inputSize, table);
+        return compress(outputBase, outputAddress, outputSize, input, 0, inputSize, table);
     }
 
-    public static int compress(byte[] outputBase, long outputAddress, int outputSize, byte[] inputBase, long inputAddress, int inputSize, FseCompressionTable table)
+    public static int compress(byte[] outputBase, int outputAddress, int outputSize, byte[] inputBase, int inputAddress, int inputSize, FseCompressionTable table)
     {
         checkArgument(outputSize >= SIZE_OF_LONG, "Output buffer too small");
 
-        final long start = inputAddress;
-        final long inputLimit = start + inputSize;
+        final int start = inputAddress;
+        final int inputLimit = start + inputSize;
 
-        long input = inputLimit;
+        int input = inputLimit;
 
         if (inputSize <= 2) {
             return 0;
@@ -173,22 +173,22 @@ final class FiniteStateEntropy
 
         if ((inputSize & 1) != 0) {
             input--;
-            state1 = table.begin(inputBase[(int) input]);
+            state1 = table.begin(inputBase[input]);
 
             input--;
-            state2 = table.begin(inputBase[(int) input]);
+            state2 = table.begin(inputBase[input]);
 
             input--;
-            state1 = table.encode(stream, state1, inputBase[(int) input]);
+            state1 = table.encode(stream, state1, inputBase[input]);
 
             stream.flush();
         }
         else {
             input--;
-            state2 = table.begin(inputBase[(int) input]);
+            state2 = table.begin(inputBase[input]);
 
             input--;
-            state1 = table.begin(inputBase[(int) input]);
+            state1 = table.begin(inputBase[input]);
         }
 
         // join to mod 4
@@ -196,10 +196,10 @@ final class FiniteStateEntropy
 
         if ((SIZE_OF_LONG * 8 > MAX_TABLE_LOG * 4 + 7) && (inputSize & 2) != 0) {  /* test bit 2 */
             input--;
-            state2 = table.encode(stream, state2, inputBase[(int) input]);
+            state2 = table.encode(stream, state2, inputBase[input]);
 
             input--;
-            state1 = table.encode(stream, state1, inputBase[(int) input]);
+            state1 = table.encode(stream, state1, inputBase[input]);
 
             stream.flush();
         }
@@ -207,21 +207,21 @@ final class FiniteStateEntropy
         // 2 or 4 encoding per loop
         while (input > start) {
             input--;
-            state2 = table.encode(stream, state2, inputBase[(int) input]);
+            state2 = table.encode(stream, state2, inputBase[input]);
 
             if (SIZE_OF_LONG * 8 < MAX_TABLE_LOG * 2 + 7) {
                 stream.flush();
             }
 
             input--;
-            state1 = table.encode(stream, state1, inputBase[(int) input]);
+            state1 = table.encode(stream, state1, inputBase[input]);
 
             if (SIZE_OF_LONG * 8 > MAX_TABLE_LOG * 4 + 7) {
                 input--;
-                state2 = table.encode(stream, state2, inputBase[(int) input]);
+                state2 = table.encode(stream, state2, inputBase[input]);
 
                 input--;
-                state1 = table.encode(stream, state1, inputBase[(int) input]);
+                state1 = table.encode(stream, state1, inputBase[input]);
             }
 
             stream.flush();
@@ -402,13 +402,13 @@ final class FiniteStateEntropy
         return 0;
     }
 
-    public static int writeNormalizedCounts(byte[] outputBase, long outputAddress, int outputSize, short[] normalizedCounts, int maxSymbol, int tableLog)
+    public static int writeNormalizedCounts(byte[] outputBase, int outputAddress, int outputSize, short[] normalizedCounts, int maxSymbol, int tableLog)
     {
         checkArgument(tableLog <= MAX_TABLE_LOG, "FSE table too large");
         checkArgument(tableLog >= MIN_TABLE_LOG, "FSE table too small");
 
-        long output = outputAddress;
-        long outputLimit = outputAddress + outputSize;
+        int output = outputAddress;
+        int outputLimit = outputAddress + outputSize;
 
         int tableSize = 1 << tableLog;
 
@@ -445,7 +445,7 @@ final class FiniteStateEntropy
                     bitStream |= (0b11_11_11_11_11_11_11_11 << bitCount);
                     checkArgument(output + SIZE_OF_SHORT <= outputLimit, "Output buffer too small");
 
-                    Mem.SHORT_LE.set(outputBase, (int) output, (short) bitStream);
+                    Mem.SHORT_LE.set(outputBase, output, (short) bitStream);
                     output += SIZE_OF_SHORT;
 
                     // flush now, so no need to increase bitCount by 16
@@ -467,7 +467,7 @@ final class FiniteStateEntropy
                 if (bitCount > 16) {
                     checkArgument(output + SIZE_OF_SHORT <= outputLimit, "Output buffer too small");
 
-                    Mem.SHORT_LE.set(outputBase, (int) output, (short) bitStream);
+                    Mem.SHORT_LE.set(outputBase, output, (short) bitStream);
                     output += SIZE_OF_SHORT;
 
                     bitStream >>>= Short.SIZE;
@@ -500,7 +500,7 @@ final class FiniteStateEntropy
             if (bitCount > 16) {
                 checkArgument(output + SIZE_OF_SHORT <= outputLimit, "Output buffer too small");
 
-                Mem.SHORT_LE.set(outputBase, (int) output, (short) bitStream);
+                Mem.SHORT_LE.set(outputBase, output, (short) bitStream);
                 output += SIZE_OF_SHORT;
 
                 bitStream >>>= Short.SIZE;
@@ -510,12 +510,12 @@ final class FiniteStateEntropy
 
         // flush remaining bitstream
         checkArgument(output + SIZE_OF_SHORT <= outputLimit, "Output buffer too small");
-        Mem.SHORT_LE.set(outputBase, (int) output, (short) bitStream);
+        Mem.SHORT_LE.set(outputBase, output, (short) bitStream);
         output += (bitCount + 7) / 8;
 
         checkArgument(symbol <= maxSymbol + 1, "Error"); // TODO
 
-        return (int) (output - outputAddress);
+        return output - outputAddress;
     }
 
     public static final class Table

@@ -62,36 +62,36 @@ final class SequenceEncoder
     {
     }
 
-    public static int compressSequences(byte[] outputBase, final long outputAddress, int outputSize, SequenceStore sequences, CompressionParameters.Strategy strategy, SequenceEncodingContext workspace)
+    public static int compressSequences(byte[] outputBase, final int outputAddress, int outputSize, SequenceStore sequences, CompressionParameters.Strategy strategy, SequenceEncodingContext workspace)
     {
-        long output = outputAddress;
-        long outputLimit = outputAddress + outputSize;
+        int output = outputAddress;
+        int outputLimit = outputAddress + outputSize;
 
         checkArgument(outputLimit - output > 3 /* max sequence count Size */ + 1 /* encoding type flags */, "Output buffer too small");
 
         int sequenceCount = sequences.sequenceCount;
         if (sequenceCount < 0x7F) {
-            outputBase[(int) output] = (byte) sequenceCount;
+            outputBase[output] = (byte) sequenceCount;
             output++;
         }
         else if (sequenceCount < LONG_NUMBER_OF_SEQUENCES) {
-            outputBase[(int) output] = (byte) (sequenceCount >>> 8 | 0x80);
-            outputBase[(int) (output + 1)] = (byte) sequenceCount;
+            outputBase[output] = (byte) (sequenceCount >>> 8 | 0x80);
+            outputBase[output + 1] = (byte) sequenceCount;
             output += SIZE_OF_SHORT;
         }
         else {
-            outputBase[(int) output] = (byte) 0xFF;
+            outputBase[output] = (byte) 0xFF;
             output++;
-            Mem.SHORT_LE.set(outputBase, (int) output, (short) (sequenceCount - LONG_NUMBER_OF_SEQUENCES));
+            Mem.SHORT_LE.set(outputBase, output, (short) (sequenceCount - LONG_NUMBER_OF_SEQUENCES));
             output += SIZE_OF_SHORT;
         }
 
         if (sequenceCount == 0) {
-            return (int) (output - outputAddress);
+            return output - outputAddress;
         }
 
         // flags for FSE encoding type
-        long headerAddress = output++;
+        int headerAddress = output++;
 
         int maxSymbol;
         int largestCount;
@@ -107,7 +107,7 @@ final class SequenceEncoder
         FseCompressionTable literalLengthTable;
         switch (literalsLengthEncodingType) {
             case SEQUENCE_ENCODING_RLE -> {
-                outputBase[(int) output] = sequences.literalLengthCodes[0];
+                outputBase[output] = sequences.literalLengthCodes[0];
                 output++;
                 workspace.literalLengthTable.initializeRleTable(maxSymbol);
                 literalLengthTable = workspace.literalLengthTable;
@@ -143,7 +143,7 @@ final class SequenceEncoder
         FseCompressionTable offsetCodeTable;
         switch (offsetEncodingType) {
             case SEQUENCE_ENCODING_RLE -> {
-                outputBase[(int) output] = sequences.offsetCodes[0];
+                outputBase[output] = sequences.offsetCodes[0];
                 output++;
                 workspace.offsetCodeTable.initializeRleTable(maxSymbol);
                 offsetCodeTable = workspace.offsetCodeTable;
@@ -176,7 +176,7 @@ final class SequenceEncoder
         FseCompressionTable matchLengthTable;
         switch (matchLengthEncodingType) {
             case SEQUENCE_ENCODING_RLE -> {
-                outputBase[(int) output] = sequences.matchLengthCodes[0];
+                outputBase[output] = sequences.matchLengthCodes[0];
                 output++;
                 workspace.matchLengthTable.initializeRleTable(maxSymbol);
                 matchLengthTable = workspace.matchLengthTable;
@@ -200,14 +200,14 @@ final class SequenceEncoder
         }
 
         // flags
-        outputBase[(int) headerAddress] = (byte) ((literalsLengthEncodingType << 6) | (offsetEncodingType << 4) | (matchLengthEncodingType << 2));
+        outputBase[headerAddress] = (byte) ((literalsLengthEncodingType << 6) | (offsetEncodingType << 4) | (matchLengthEncodingType << 2));
 
         output += encodeSequences(outputBase, output, outputLimit, matchLengthTable, offsetCodeTable, literalLengthTable, sequences);
 
-        return (int) (output - outputAddress);
+        return output - outputAddress;
     }
 
-    private static int buildCompressionTable(FseCompressionTable table, byte[] outputBase, long output, long outputLimit, int sequenceCount, int maxTableLog, byte[] codes, int[] counts, int maxSymbol, short[] normalizedCounts)
+    private static int buildCompressionTable(FseCompressionTable table, byte[] outputBase, int output, int outputLimit, int sequenceCount, int maxTableLog, byte[] codes, int[] counts, int maxSymbol, short[] normalizedCounts)
     {
         int tableLog = optimalTableLog(maxTableLog, sequenceCount, maxSymbol);
 
@@ -221,13 +221,13 @@ final class SequenceEncoder
         FiniteStateEntropy.normalizeCounts(normalizedCounts, tableLog, counts, sequenceCount, maxSymbol);
         table.initialize(normalizedCounts, maxSymbol, tableLog);
 
-        return FiniteStateEntropy.writeNormalizedCounts(outputBase, output, (int) (outputLimit - output), normalizedCounts, maxSymbol, tableLog); // TODO: pass outputLimit directly
+        return FiniteStateEntropy.writeNormalizedCounts(outputBase, output, outputLimit - output, normalizedCounts, maxSymbol, tableLog); // TODO: pass outputLimit directly
     }
 
     private static int encodeSequences(
             byte[] outputBase,
-            long output,
-            long outputLimit,
+            int output,
+            int outputLimit,
             FseCompressionTable matchLengthTable,
             FseCompressionTable offsetsTable,
             FseCompressionTable literalLengthTable,
@@ -237,7 +237,7 @@ final class SequenceEncoder
         byte[] offsetCodes = sequences.offsetCodes;
         byte[] literalLengthCodes = sequences.literalLengthCodes;
 
-        BitOutputStream blockStream = new BitOutputStream(outputBase, output, (int) (outputLimit - output));
+        BitOutputStream blockStream = new BitOutputStream(outputBase, output, outputLimit - output);
 
         int sequenceCount = sequences.sequenceCount;
 

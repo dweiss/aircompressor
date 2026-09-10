@@ -106,16 +106,16 @@ final class Util
         return cycleLog;
     }
 
-    public static int get24BitLittleEndian(byte[] inputBase, long inputAddress)
+    public static int get24BitLittleEndian(byte[] inputBase, int inputAddress)
     {
-        return ((short) Mem.SHORT_LE.get(inputBase, (int) inputAddress) & 0xFFFF)
-                | ((inputBase[(int) (inputAddress + SIZE_OF_SHORT)] & 0xFF) << Short.SIZE);
+        return ((short) Mem.SHORT_LE.get(inputBase, inputAddress) & 0xFFFF)
+                | ((inputBase[inputAddress + SIZE_OF_SHORT] & 0xFF) << Short.SIZE);
     }
 
-    public static void put24BitLittleEndian(byte[] outputBase, long outputAddress, int value)
+    public static void put24BitLittleEndian(byte[] outputBase, int outputAddress, int value)
     {
-        Mem.SHORT_LE.set(outputBase, (int) outputAddress, (short) value);
-        outputBase[(int) (outputAddress + SIZE_OF_SHORT)] = (byte) (value >>> Short.SIZE);
+        Mem.SHORT_LE.set(outputBase, outputAddress, (short) value);
+        outputBase[outputAddress + SIZE_OF_SHORT] = (byte) (value >>> Short.SIZE);
     }
 
     // provides the minimum logSize to safely represent a distribution

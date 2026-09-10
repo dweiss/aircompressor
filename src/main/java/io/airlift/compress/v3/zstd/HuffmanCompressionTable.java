@@ -198,11 +198,11 @@ final class HuffmanCompressionTable
         output.addBitsFast(values[symbol], numberOfBits[symbol]);
     }
 
-    public int write(byte[] outputBase, long outputAddress, int outputSize, HuffmanTableWriterWorkspace workspace)
+    public int write(byte[] outputBase, int outputAddress, int outputSize, HuffmanTableWriterWorkspace workspace)
     {
         byte[] weights = workspace.weights;
 
-        long output = outputAddress;
+        int output = outputAddress;
 
         int maxNumberOfBits = this.maxNumberOfBits;
         int maxSymbol = this.maxSymbol;
@@ -234,7 +234,7 @@ final class HuffmanCompressionTable
             //   - the compressed size is better than what we'd get with the raw encoding below
             //   - the compressed size is <= 127 bytes, which is the most that the encoding can hold for FSE-compressed weights (see RFC 8478 section 4.2.1.1). This is implied
             //     by the maxSymbol / 2 check, since maxSymbol must be <= 255
-            outputBase[(int) output] = (byte) size;
+            outputBase[output] = (byte) size;
             return size + 1; // header + size
         }
         else {
@@ -248,16 +248,16 @@ final class HuffmanCompressionTable
 
             // encode number of symbols
             // header = #entries + 127 per RFC
-            outputBase[(int) output] = (byte) (127 + entryCount);
+            outputBase[output] = (byte) (127 + entryCount);
             output++;
 
             weights[maxSymbol] = 0; // last weight is implicit, so set to 0 so that it doesn't get encoded below
             for (int i = 0; i < entryCount; i += 2) {
-                outputBase[(int) output] = (byte) ((weights[i] << 4) + weights[i + 1]);
+                outputBase[output] = (byte) ((weights[i] << 4) + weights[i + 1]);
                 output++;
             }
 
-            return (int) (output - outputAddress);
+            return output - outputAddress;
         }
     }
 
@@ -391,7 +391,7 @@ final class HuffmanCompressionTable
     /**
      * All elements within weightTable must be <= Huffman.MAX_TABLE_LOG
      */
-    private static int compressWeights(byte[] outputBase, long outputAddress, int outputSize, byte[] weights, int weightsLength, HuffmanTableWriterWorkspace workspace)
+    private static int compressWeights(byte[] outputBase, int outputAddress, int outputSize, byte[] weights, int weightsLength, HuffmanTableWriterWorkspace workspace)
     {
         if (weightsLength <= 1) {
             return 0; // Not compressible
@@ -415,8 +415,8 @@ final class HuffmanCompressionTable
         int tableLog = FiniteStateEntropy.optimalTableLog(MAX_FSE_TABLE_LOG, weightsLength, maxSymbol);
         FiniteStateEntropy.normalizeCounts(normalizedCounts, tableLog, counts, weightsLength, maxSymbol);
 
-        long output = outputAddress;
-        long outputLimit = outputAddress + outputSize;
+        int output = outputAddress;
+        int outputLimit = outputAddress + outputSize;
 
         // Write table description header
         int headerSize = FiniteStateEntropy.writeNormalizedCounts(outputBase, output, outputSize, normalizedCounts, maxSymbol, tableLog);
@@ -425,12 +425,12 @@ final class HuffmanCompressionTable
         // Compress
         FseCompressionTable compressionTable = workspace.fseTable;
         compressionTable.initialize(normalizedCounts, maxSymbol, tableLog);
-        int compressedSize = FiniteStateEntropy.compress(outputBase, output, (int) (outputLimit - output), weights, weightsLength, compressionTable);
+        int compressedSize = FiniteStateEntropy.compress(outputBase, output, outputLimit - output, weights, weightsLength, compressionTable);
         if (compressedSize == 0) {
             return 0;
         }
         output += compressedSize;
 
-        return (int) (output - outputAddress);
+        return output - outputAddress;
     }
 }

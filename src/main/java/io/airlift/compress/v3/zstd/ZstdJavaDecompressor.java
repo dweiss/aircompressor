@@ -36,10 +36,10 @@ public class ZstdJavaDecompressor
         verifyRange(input, inputOffset, inputLength);
         verifyRange(output, outputOffset, maxOutputLength);
 
-        long inputAddress = inputOffset;
-        long inputLimit = inputAddress + inputLength;
-        long outputAddress = outputOffset;
-        long outputLimit = outputAddress + maxOutputLength;
+        int inputAddress = inputOffset;
+        int inputLimit = inputAddress + inputLength;
+        int outputAddress = outputOffset;
+        int outputLimit = outputAddress + maxOutputLength;
 
         return decompressor.decompress(input, inputAddress, inputLimit, output, outputAddress, outputLimit);
     }
@@ -50,25 +50,25 @@ public class ZstdJavaDecompressor
     {
         try {
             byte[] inputBase = Mem.heapArray(input);
-            long inputAddress = 0L;
+            int inputAddress = 0;
             if (inputBase != null) {
-                inputAddress = input.address();
+                inputAddress = toIntExact(input.address());
             }
             else {
                 inputBase = input.toArray(JAVA_BYTE);
             }
-            long inputLimit = addExact(inputAddress, input.byteSize());
+            int inputLimit = addExact(inputAddress, toIntExact(input.byteSize()));
 
             byte[] outputBase = Mem.heapArray(output);
-            long outputAddress = 0L;
+            int outputAddress = 0;
             boolean copyOutput = outputBase == null;
             if (copyOutput) {
                 outputBase = new byte[toIntExact(output.byteSize())];
             }
             else {
-                outputAddress = output.address();
+                outputAddress = toIntExact(output.address());
             }
-            long outputLimit = addExact(outputAddress, output.byteSize());
+            int outputLimit = addExact(outputAddress, toIntExact(output.byteSize()));
 
             int written = decompressor.decompress(
                     inputBase,

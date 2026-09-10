@@ -44,8 +44,8 @@ public class ZstdJavaCompressor
         verifyRange(input, inputOffset, inputLength);
         verifyRange(output, outputOffset, maxOutputLength);
 
-        long inputAddress = inputOffset;
-        long outputAddress = outputOffset;
+        int inputAddress = inputOffset;
+        int outputAddress = outputOffset;
 
         return ZstdFrameCompressor.compress(input, inputAddress, inputAddress + inputLength, output, outputAddress, outputAddress + maxOutputLength, CompressionParameters.DEFAULT_COMPRESSION_LEVEL);
     }
@@ -55,25 +55,25 @@ public class ZstdJavaCompressor
     {
         try {
             byte[] inputBase = Mem.heapArray(input);
-            long inputAddress = 0L;
+            int inputAddress = 0;
             if (inputBase != null) {
-                inputAddress = input.address();
+                inputAddress = toIntExact(input.address());
             }
             else {
                 inputBase = input.toArray(JAVA_BYTE);
             }
-            long inputLimit = addExact(inputAddress, input.byteSize());
+            int inputLimit = addExact(inputAddress, toIntExact(input.byteSize()));
 
             byte[] outputBase = Mem.heapArray(output);
-            long outputAddress = 0L;
+            int outputAddress = 0;
             boolean copyOutput = outputBase == null;
             if (copyOutput) {
                 outputBase = new byte[toIntExact(output.byteSize())];
             }
             else {
-                outputAddress = output.address();
+                outputAddress = toIntExact(output.address());
             }
-            long outputLimit = addExact(outputAddress, output.byteSize());
+            int outputLimit = addExact(outputAddress, toIntExact(output.byteSize()));
 
             int written = ZstdFrameCompressor.compress(
                     inputBase,

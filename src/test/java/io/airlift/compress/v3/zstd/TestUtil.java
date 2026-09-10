@@ -43,7 +43,7 @@ class TestUtil
 
     private static void testGet24BitLittleEndian(TestData testData)
     {
-        long inputAddress = testData.offset;
+        int inputAddress = testData.offset;
         assertThat(get24BitLittleEndian(testData.bytes, inputAddress)).isEqualTo(testData.value);
     }
 
@@ -58,7 +58,7 @@ class TestUtil
     private static void testPut24BitLittleEndian(TestData testData)
     {
         byte[] outputBase = new byte[testData.bytes.length];
-        long outputAddress = testData.offset;
+        int outputAddress = testData.offset;
         put24BitLittleEndian(outputBase, outputAddress, testData.value);
         assertThat(outputBase).isEqualTo(testData.bytes);
     }
