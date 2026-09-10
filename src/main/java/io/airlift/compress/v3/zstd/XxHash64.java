@@ -17,11 +17,9 @@ import java.io.IOException;
 import java.io.InputStream;
 
 import static io.airlift.compress.v3.zstd.Constants.SIZE_OF_LONG;
-import static io.airlift.compress.v3.zstd.UnsafeUtil.UNSAFE;
 import static io.airlift.compress.v3.zstd.Util.checkPositionIndexes;
 import static java.lang.Long.rotateLeft;
 import static java.lang.Math.min;
-import static sun.misc.Unsafe.ARRAY_BYTE_BASE_OFFSET;
 
 // Forked from https://github.com/airlift/slice
 // This Unsafe-based implementation exists only to serve the Zstd Java implementation,
@@ -38,7 +36,7 @@ final class XxHash64
 
     private final long seed;
 
-    private static final long BUFFER_ADDRESS = ARRAY_BYTE_BASE_OFFSET;
+    private static final long BUFFER_ADDRESS = 0L;
     private final byte[] buffer = new byte[32];
     private int bufferSize;
 
@@ -71,7 +69,7 @@ final class XxHash64
     public XxHash64 update(byte[] data, int offset, int length)
     {
         checkPositionIndexes(offset, offset + length, data.length);
-        updateHash(data, ARRAY_BYTE_BASE_OFFSET + offset, length);
+        updateHash(data, offset, length);
         return this;
     }
 
@@ -102,12 +100,12 @@ final class XxHash64
         return hash;
     }
 
-    private void updateHash(Object base, long address, int length)
+    private void updateHash(byte[] base, long address, int length)
     {
         if (bufferSize > 0) {
             int available = min(32 - bufferSize, length);
 
-            UNSAFE.copyMemory(base, address, buffer, BUFFER_ADDRESS + bufferSize, available);
+            Mem.copyMemory(base, address, buffer, BUFFER_ADDRESS + bufferSize, available);
 
             bufferSize += available;
             address += available;
@@ -126,19 +124,19 @@ final class XxHash64
         }
 
         if (length > 0) {
-            UNSAFE.copyMemory(base, address, buffer, BUFFER_ADDRESS, length);
+            Mem.copyMemory(base, address, buffer, BUFFER_ADDRESS, length);
             bufferSize = length;
         }
     }
 
-    private int updateBody(Object base, long address, int length)
+    private int updateBody(byte[] base, long address, int length)
     {
         int remaining = length;
         while (remaining >= 32) {
-            v1 = mix(v1, UNSAFE.getLong(base, address));
-            v2 = mix(v2, UNSAFE.getLong(base, address + 8));
-            v3 = mix(v3, UNSAFE.getLong(base, address + 16));
-            v4 = mix(v4, UNSAFE.getLong(base, address + 24));
+            v1 = mix(v1, Mem.getLong(base, address));
+            v2 = mix(v2, Mem.getLong(base, address + 8));
+            v3 = mix(v3, Mem.getLong(base, address + 16));
+            v4 = mix(v4, Mem.getLong(base, address + 24));
 
             address += 32;
             remaining -= 32;
@@ -179,7 +177,7 @@ final class XxHash64
         return hash.hash();
     }
 
-    public static long hash(long seed, Object base, long address, int length)
+    public static long hash(long seed, byte[] base, long address, int length)
     {
         long hash;
         if (length >= 32) {
@@ -198,20 +196,20 @@ final class XxHash64
         return updateTail(hash, base, address, index, length);
     }
 
-    private static long updateTail(long hash, Object base, long address, int index, int length)
+    private static long updateTail(long hash, byte[] base, long address, int index, int length)
     {
         while (index <= length - 8) {
-            hash = updateTail(hash, UNSAFE.getLong(base, address + index));
+            hash = updateTail(hash, Mem.getLong(base, address + index));
             index += 8;
         }
 
         if (index <= length - 4) {
-            hash = updateTail(hash, UNSAFE.getInt(base, address + index));
+            hash = updateTail(hash, Mem.getInt(base, address + index));
             index += 4;
         }
 
         while (index < length) {
-            hash = updateTail(hash, UNSAFE.getByte(base, address + index));
+            hash = updateTail(hash, Mem.getByte(base, address + index));
             index++;
         }
 
@@ -220,7 +218,7 @@ final class XxHash64
         return hash;
     }
 
-    private static long updateBody(long seed, Object base, long address, int length)
+    private static long updateBody(long seed, byte[] base, long address, int length)
     {
         long v1 = seed + PRIME64_1 + PRIME64_2;
         long v2 = seed + PRIME64_2;
@@ -229,10 +227,10 @@ final class XxHash64
 
         int remaining = length;
         while (remaining >= 32) {
-            v1 = mix(v1, UNSAFE.getLong(base, address));
-            v2 = mix(v2, UNSAFE.getLong(base, address + 8));
-            v3 = mix(v3, UNSAFE.getLong(base, address + 16));
-            v4 = mix(v4, UNSAFE.getLong(base, address + 24));
+            v1 = mix(v1, Mem.getLong(base, address));
+            v2 = mix(v2, Mem.getLong(base, address + 8));
+            v3 = mix(v3, Mem.getLong(base, address + 16));
+            v4 = mix(v4, Mem.getLong(base, address + 24));
 
             address += 32;
             remaining -= 32;

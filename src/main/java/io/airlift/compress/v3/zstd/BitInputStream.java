@@ -14,7 +14,6 @@
 package io.airlift.compress.v3.zstd;
 
 import static io.airlift.compress.v3.zstd.Constants.SIZE_OF_LONG;
-import static io.airlift.compress.v3.zstd.UnsafeUtil.UNSAFE;
 import static io.airlift.compress.v3.zstd.Util.highestBit;
 import static io.airlift.compress.v3.zstd.Util.verify;
 
@@ -36,23 +35,23 @@ final class BitInputStream
         return startAddress == currentAddress && bitsConsumed == Long.SIZE;
     }
 
-    private static long readTail(Object inputBase, long inputAddress, int inputSize)
+    private static long readTail(byte[] inputBase, long inputAddress, int inputSize)
     {
-        long bits = UNSAFE.getByte(inputBase, inputAddress) & 0xFF;
+        long bits = Mem.getByte(inputBase, inputAddress) & 0xFF;
 
         switch (inputSize) {
             case 7:
-                bits |= (UNSAFE.getByte(inputBase, inputAddress + 6) & 0xFFL) << 48;
+                bits |= (Mem.getByte(inputBase, inputAddress + 6) & 0xFFL) << 48;
             case 6:
-                bits |= (UNSAFE.getByte(inputBase, inputAddress + 5) & 0xFFL) << 40;
+                bits |= (Mem.getByte(inputBase, inputAddress + 5) & 0xFFL) << 40;
             case 5:
-                bits |= (UNSAFE.getByte(inputBase, inputAddress + 4) & 0xFFL) << 32;
+                bits |= (Mem.getByte(inputBase, inputAddress + 4) & 0xFFL) << 32;
             case 4:
-                bits |= (UNSAFE.getByte(inputBase, inputAddress + 3) & 0xFFL) << 24;
+                bits |= (Mem.getByte(inputBase, inputAddress + 3) & 0xFFL) << 24;
             case 3:
-                bits |= (UNSAFE.getByte(inputBase, inputAddress + 2) & 0xFFL) << 16;
+                bits |= (Mem.getByte(inputBase, inputAddress + 2) & 0xFFL) << 16;
             case 2:
-                bits |= (UNSAFE.getByte(inputBase, inputAddress + 1) & 0xFFL) << 8;
+                bits |= (Mem.getByte(inputBase, inputAddress + 1) & 0xFFL) << 8;
         }
 
         return bits;
@@ -78,14 +77,14 @@ final class BitInputStream
 
     static class Initializer
     {
-        private final Object inputBase;
+        private final byte[] inputBase;
         private final long startAddress;
         private final long endAddress;
         private long bits;
         private long currentAddress;
         private int bitsConsumed;
 
-        public Initializer(Object inputBase, long startAddress, long endAddress)
+        public Initializer(byte[] inputBase, long startAddress, long endAddress)
         {
             this.inputBase = inputBase;
             this.startAddress = startAddress;
@@ -111,7 +110,7 @@ final class BitInputStream
         {
             verify(endAddress - startAddress >= 1, startAddress, "Bitstream is empty");
 
-            int lastByte = UNSAFE.getByte(inputBase, endAddress - 1) & 0xFF;
+            int lastByte = Mem.getByte(inputBase, endAddress - 1) & 0xFF;
             verify(lastByte != 0, endAddress, "Bitstream end mark not present");
 
             bitsConsumed = SIZE_OF_LONG - highestBit(lastByte);
@@ -119,7 +118,7 @@ final class BitInputStream
             int inputSize = (int) (endAddress - startAddress);
             if (inputSize >= SIZE_OF_LONG) {  /* normal case */
                 currentAddress = endAddress - SIZE_OF_LONG;
-                bits = UNSAFE.getLong(inputBase, currentAddress);
+                bits = Mem.getLong(inputBase, currentAddress);
             }
             else {
                 currentAddress = startAddress;
@@ -132,14 +131,14 @@ final class BitInputStream
 
     static final class Loader
     {
-        private final Object inputBase;
+        private final byte[] inputBase;
         private final long startAddress;
         private long bits;
         private long currentAddress;
         private int bitsConsumed;
         private boolean overflow;
 
-        public Loader(Object inputBase, long startAddress, long currentAddress, long bits, int bitsConsumed)
+        public Loader(byte[] inputBase, long startAddress, long currentAddress, long bits, int bitsConsumed)
         {
             this.inputBase = inputBase;
             this.startAddress = startAddress;
@@ -183,7 +182,7 @@ final class BitInputStream
             if (currentAddress >= startAddress + SIZE_OF_LONG) {
                 if (bytes > 0) {
                     currentAddress -= bytes;
-                    bits = UNSAFE.getLong(inputBase, currentAddress);
+                    bits = Mem.getLong(inputBase, currentAddress);
                 }
                 bitsConsumed &= 0b111;
             }
@@ -191,13 +190,13 @@ final class BitInputStream
                 bytes = (int) (currentAddress - startAddress);
                 currentAddress = startAddress;
                 bitsConsumed -= bytes * SIZE_OF_LONG;
-                bits = UNSAFE.getLong(inputBase, startAddress);
+                bits = Mem.getLong(inputBase, startAddress);
                 return true;
             }
             else {
                 currentAddress -= bytes;
                 bitsConsumed -= bytes * SIZE_OF_LONG;
-                bits = UNSAFE.getLong(inputBase, currentAddress);
+                bits = Mem.getLong(inputBase, currentAddress);
             }
 
             return false;

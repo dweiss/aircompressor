@@ -15,7 +15,6 @@ package io.airlift.compress.v3.zstd;
 
 import static io.airlift.compress.v3.zstd.Constants.SIZE_OF_LONG;
 import static io.airlift.compress.v3.zstd.Constants.SIZE_OF_SHORT;
-import static io.airlift.compress.v3.zstd.UnsafeUtil.UNSAFE;
 
 final class HuffmanCompressor
 {
@@ -23,7 +22,7 @@ final class HuffmanCompressor
     {
     }
 
-    public static int compress4streams(Object outputBase, long outputAddress, int outputSize, Object inputBase, long inputAddress, int inputSize, HuffmanCompressionTable table)
+    public static int compress4streams(byte[] outputBase, long outputAddress, int outputSize, byte[] inputBase, long inputAddress, int inputSize, HuffmanCompressionTable table)
     {
         long input = inputAddress;
         long inputLimit = inputAddress + inputSize;
@@ -49,7 +48,7 @@ final class HuffmanCompressor
         if (compressedSize == 0) {
             return 0;
         }
-        UNSAFE.putShort(outputBase, outputAddress, (short) compressedSize);
+        Mem.putShort(outputBase, outputAddress, (short) compressedSize);
         output += compressedSize;
         input += segmentSize;
 
@@ -58,7 +57,7 @@ final class HuffmanCompressor
         if (compressedSize == 0) {
             return 0;
         }
-        UNSAFE.putShort(outputBase, outputAddress + SIZE_OF_SHORT, (short) compressedSize);
+        Mem.putShort(outputBase, outputAddress + SIZE_OF_SHORT, (short) compressedSize);
         output += compressedSize;
         input += segmentSize;
 
@@ -67,7 +66,7 @@ final class HuffmanCompressor
         if (compressedSize == 0) {
             return 0;
         }
-        UNSAFE.putShort(outputBase, outputAddress + SIZE_OF_SHORT + SIZE_OF_SHORT, (short) compressedSize);
+        Mem.putShort(outputBase, outputAddress + SIZE_OF_SHORT + SIZE_OF_SHORT, (short) compressedSize);
         output += compressedSize;
         input += segmentSize;
 
@@ -81,7 +80,7 @@ final class HuffmanCompressor
         return (int) (output - outputAddress);
     }
 
-    public static int compressSingleStream(Object outputBase, long outputAddress, int outputSize, Object inputBase, long inputAddress, int inputSize, HuffmanCompressionTable table)
+    public static int compressSingleStream(byte[] outputBase, long outputAddress, int outputSize, byte[] inputBase, long inputAddress, int inputSize, HuffmanCompressionTable table)
     {
         if (outputSize < SIZE_OF_LONG) {
             return 0;
@@ -94,19 +93,19 @@ final class HuffmanCompressor
 
         switch (inputSize & 3) {
             case 3:
-                table.encodeSymbol(bitstream, UNSAFE.getByte(inputBase, input + n + 2) & 0xFF);
+                table.encodeSymbol(bitstream, Mem.getByte(inputBase, input + n + 2) & 0xFF);
                 if (SIZE_OF_LONG * 8 < Huffman.MAX_TABLE_LOG * 4 + 7) {
                     bitstream.flush();
                 }
                 // fall-through
             case 2:
-                table.encodeSymbol(bitstream, UNSAFE.getByte(inputBase, input + n + 1) & 0xFF);
+                table.encodeSymbol(bitstream, Mem.getByte(inputBase, input + n + 1) & 0xFF);
                 if (SIZE_OF_LONG * 8 < Huffman.MAX_TABLE_LOG * 2 + 7) {
                     bitstream.flush();
                 }
                 // fall-through
             case 1:
-                table.encodeSymbol(bitstream, UNSAFE.getByte(inputBase, input + n + 0) & 0xFF);
+                table.encodeSymbol(bitstream, Mem.getByte(inputBase, input + n + 0) & 0xFF);
                 bitstream.flush();
                 // fall-through
             case 0: /* fall-through */
@@ -115,19 +114,19 @@ final class HuffmanCompressor
         }
 
         for (; n > 0; n -= 4) {  // note: n & 3 == 0 at this stage
-            table.encodeSymbol(bitstream, UNSAFE.getByte(inputBase, input + n - 1) & 0xFF);
+            table.encodeSymbol(bitstream, Mem.getByte(inputBase, input + n - 1) & 0xFF);
             if (SIZE_OF_LONG * 8 < Huffman.MAX_TABLE_LOG * 2 + 7) {
                 bitstream.flush();
             }
-            table.encodeSymbol(bitstream, UNSAFE.getByte(inputBase, input + n - 2) & 0xFF);
+            table.encodeSymbol(bitstream, Mem.getByte(inputBase, input + n - 2) & 0xFF);
             if (SIZE_OF_LONG * 8 < Huffman.MAX_TABLE_LOG * 4 + 7) {
                 bitstream.flush();
             }
-            table.encodeSymbol(bitstream, UNSAFE.getByte(inputBase, input + n - 3) & 0xFF);
+            table.encodeSymbol(bitstream, Mem.getByte(inputBase, input + n - 3) & 0xFF);
             if (SIZE_OF_LONG * 8 < Huffman.MAX_TABLE_LOG * 2 + 7) {
                 bitstream.flush();
             }
-            table.encodeSymbol(bitstream, UNSAFE.getByte(inputBase, input + n - 4) & 0xFF);
+            table.encodeSymbol(bitstream, Mem.getByte(inputBase, input + n - 4) & 0xFF);
             bitstream.flush();
         }
 

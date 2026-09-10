@@ -16,7 +16,6 @@ package io.airlift.compress.v3.zstd;
 import io.airlift.compress.v3.MalformedInputException;
 
 import static io.airlift.compress.v3.zstd.Constants.SIZE_OF_SHORT;
-import static io.airlift.compress.v3.zstd.UnsafeUtil.UNSAFE;
 
 final class Util
 {
@@ -107,16 +106,16 @@ final class Util
         return cycleLog;
     }
 
-    public static int get24BitLittleEndian(Object inputBase, long inputAddress)
+    public static int get24BitLittleEndian(byte[] inputBase, long inputAddress)
     {
-        return (UNSAFE.getShort(inputBase, inputAddress) & 0xFFFF)
-                | ((UNSAFE.getByte(inputBase, inputAddress + SIZE_OF_SHORT) & 0xFF) << Short.SIZE);
+        return (Mem.getShort(inputBase, inputAddress) & 0xFFFF)
+                | ((Mem.getByte(inputBase, inputAddress + SIZE_OF_SHORT) & 0xFF) << Short.SIZE);
     }
 
-    public static void put24BitLittleEndian(Object outputBase, long outputAddress, int value)
+    public static void put24BitLittleEndian(byte[] outputBase, long outputAddress, int value)
     {
-        UNSAFE.putShort(outputBase, outputAddress, (short) value);
-        UNSAFE.putByte(outputBase, outputAddress + SIZE_OF_SHORT, (byte) (value >>> Short.SIZE));
+        Mem.putShort(outputBase, outputAddress, (short) value);
+        Mem.putByte(outputBase, outputAddress + SIZE_OF_SHORT, (byte) (value >>> Short.SIZE));
     }
 
     // provides the minimum logSize to safely represent a distribution

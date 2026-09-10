@@ -17,7 +17,6 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static sun.misc.Unsafe.ARRAY_BYTE_BASE_OFFSET;
 
 class TestCompressor
 {
@@ -25,7 +24,7 @@ class TestCompressor
     void testMagic()
     {
         byte[] buffer = new byte[4];
-        int address = ARRAY_BYTE_BASE_OFFSET;
+        int address = 0;
 
         ZstdFrameCompressor.writeMagic(buffer, address, address + buffer.length);
         ZstdFrameDecompressor.verifyMagic(buffer, address, address + buffer.length);
@@ -35,7 +34,7 @@ class TestCompressor
     void testMagicFailsWithSmallBuffer()
     {
         byte[] buffer = new byte[3];
-        assertThatThrownBy(() -> ZstdFrameCompressor.writeMagic(buffer, ARRAY_BYTE_BASE_OFFSET, ARRAY_BYTE_BASE_OFFSET + buffer.length))
+        assertThatThrownBy(() -> ZstdFrameCompressor.writeMagic(buffer, 0, buffer.length))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageMatching(".*buffer too small.*");
     }
@@ -44,7 +43,7 @@ class TestCompressor
     void testFrameHeaderFailsWithSmallBuffer()
     {
         byte[] buffer = new byte[ZstdFrameCompressor.MAX_FRAME_HEADER_SIZE - 1];
-        assertThatThrownBy(() -> ZstdFrameCompressor.writeFrameHeader(buffer, ARRAY_BYTE_BASE_OFFSET, ARRAY_BYTE_BASE_OFFSET + buffer.length, 1000, 1024))
+        assertThatThrownBy(() -> ZstdFrameCompressor.writeFrameHeader(buffer, 0, buffer.length, 1000, 1024))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageMatching(".*buffer too small.*");
     }
@@ -73,7 +72,7 @@ class TestCompressor
     void testMinimumWindowSize()
     {
         byte[] buffer = new byte[ZstdFrameCompressor.MAX_FRAME_HEADER_SIZE];
-        int address = ARRAY_BYTE_BASE_OFFSET;
+        int address = 0;
 
         assertThatThrownBy(() -> ZstdFrameCompressor.writeFrameHeader(buffer, address, address + buffer.length, 2000, 1023))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -84,7 +83,7 @@ class TestCompressor
     void testWindowSizePrecision()
     {
         byte[] buffer = new byte[ZstdFrameCompressor.MAX_FRAME_HEADER_SIZE];
-        int address = ARRAY_BYTE_BASE_OFFSET;
+        int address = 0;
 
         assertThatThrownBy(() -> ZstdFrameCompressor.writeFrameHeader(buffer, address, address + buffer.length, 2000, 1025))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -94,7 +93,7 @@ class TestCompressor
     private static void verifyFrameHeader(int inputSize, int windowSize, FrameHeader expected)
     {
         byte[] buffer = new byte[ZstdFrameCompressor.MAX_FRAME_HEADER_SIZE];
-        int address = ARRAY_BYTE_BASE_OFFSET;
+        int address = 0;
 
         int size = ZstdFrameCompressor.writeFrameHeader(buffer, address, address + buffer.length, inputSize, windowSize);
 

@@ -13,6 +13,7 @@
  */
 package io.airlift.compress.v3.zstd;
 
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
@@ -21,7 +22,6 @@ import static io.airlift.compress.v3.zstd.Util.checkPositionIndexes;
 import static io.airlift.compress.v3.zstd.Util.checkState;
 import static java.lang.Math.max;
 import static java.util.Objects.requireNonNull;
-import static sun.misc.Unsafe.ARRAY_BYTE_BASE_OFFSET;
 
 public class ZstdInputStream
         extends InputStream
@@ -88,8 +88,8 @@ public class ZstdInputStream
 
             decompressor.partialDecompress(
                     inputBuffer,
-                    inputBufferOffset + ARRAY_BYTE_BASE_OFFSET,
-                    inputBufferLimit + ARRAY_BYTE_BASE_OFFSET,
+                    inputBufferOffset,
+                    inputBufferLimit,
                     outputBuffer,
                     outputOffset + outputUsed,
                     outputLimit);

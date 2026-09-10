@@ -13,16 +13,15 @@
  */
 package io.airlift.compress.v3.zstd;
 
-import java.lang.foreign.MemorySegment;
 
 import static io.airlift.compress.v3.zstd.Constants.MAX_BLOCK_SIZE;
-import static io.airlift.compress.v3.zstd.UnsafeUtil.getAddress;
-import static io.airlift.compress.v3.zstd.UnsafeUtil.getBase;
+import java.lang.foreign.MemorySegment;
 import static java.lang.Math.addExact;
+import static java.lang.Math.toIntExact;
+import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.String.format;
 import static java.lang.ref.Reference.reachabilityFence;
 import static java.util.Objects.requireNonNull;
-import static sun.misc.Unsafe.ARRAY_BYTE_BASE_OFFSET;
 
 public class ZstdJavaCompressor
         implements ZstdCompressor
@@ -45,8 +44,8 @@ public class ZstdJavaCompressor
         verifyRange(input, inputOffset, inputLength);
         verifyRange(output, outputOffset, maxOutputLength);
 
-        long inputAddress = ARRAY_BYTE_BASE_OFFSET + inputOffset;
-        long outputAddress = ARRAY_BYTE_BASE_OFFSET + outputOffset;
+        long inputAddress = inputOffset;
+        long outputAddress = outputOffset;
 
         return ZstdFrameCompressor.compress(input, inputAddress, inputAddress + inputLength, output, outputAddress, outputAddress + maxOutputLength, CompressionParameters.DEFAULT_COMPRESSION_LEVEL);
     }
@@ -55,15 +54,28 @@ public class ZstdJavaCompressor
     public int compress(MemorySegment input, MemorySegment output)
     {
         try {
-            byte[] inputBase = getBase(input);
-            long inputAddress = getAddress(input);
+            byte[] inputBase = Mem.heapArray(input);
+            long inputAddress = 0L;
+            if (inputBase != null) {
+                inputAddress = input.address();
+            }
+            else {
+                inputBase = input.toArray(JAVA_BYTE);
+            }
             long inputLimit = addExact(inputAddress, input.byteSize());
 
-            byte[] outputBase = getBase(output);
-            long outputAddress = getAddress(output);
+            byte[] outputBase = Mem.heapArray(output);
+            long outputAddress = 0L;
+            boolean copyOutput = outputBase == null;
+            if (copyOutput) {
+                outputBase = new byte[toIntExact(output.byteSize())];
+            }
+            else {
+                outputAddress = output.address();
+            }
             long outputLimit = addExact(outputAddress, output.byteSize());
 
-            return ZstdFrameCompressor.compress(
+            int written = ZstdFrameCompressor.compress(
                     inputBase,
                     inputAddress,
                     inputLimit,
@@ -71,6 +83,10 @@ public class ZstdJavaCompressor
                     outputAddress,
                     outputLimit,
                     CompressionParameters.DEFAULT_COMPRESSION_LEVEL);
+            if (copyOutput) {
+                MemorySegment.copy(MemorySegment.ofArray(outputBase), 0, output, 0, written);
+            }
+            return written;
         }
         finally {
             reachabilityFence(input);

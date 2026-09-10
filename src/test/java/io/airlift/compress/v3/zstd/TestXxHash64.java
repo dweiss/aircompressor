@@ -18,7 +18,6 @@ import net.jpountz.xxhash.XXHashFactory;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static sun.misc.Unsafe.ARRAY_BYTE_BASE_OFFSET;
 
 // forked from https://github.com/airlift/slice
 class TestXxHash64
@@ -78,6 +77,6 @@ class TestXxHash64
 
     private static long hash(long seed, byte[] data, int length)
     {
-        return XxHash64.hash(seed, data, ARRAY_BYTE_BASE_OFFSET, length);
+        return XxHash64.hash(seed, data, 0, length);
     }
 }

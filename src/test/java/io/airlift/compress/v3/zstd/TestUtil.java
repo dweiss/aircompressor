@@ -21,7 +21,6 @@ import java.util.List;
 import static io.airlift.compress.v3.zstd.Util.get24BitLittleEndian;
 import static io.airlift.compress.v3.zstd.Util.put24BitLittleEndian;
 import static org.assertj.core.api.Assertions.assertThat;
-import static sun.misc.Unsafe.ARRAY_BYTE_BASE_OFFSET;
 
 class TestUtil
 {
@@ -44,7 +43,7 @@ class TestUtil
 
     private static void testGet24BitLittleEndian(TestData testData)
     {
-        long inputAddress = ARRAY_BYTE_BASE_OFFSET + testData.offset;
+        long inputAddress = testData.offset;
         assertThat(get24BitLittleEndian(testData.bytes, inputAddress)).isEqualTo(testData.value);
     }
 
@@ -58,8 +57,8 @@ class TestUtil
 
     private static void testPut24BitLittleEndian(TestData testData)
     {
-        Object outputBase = new byte[testData.bytes.length];
-        long outputAddress = ARRAY_BYTE_BASE_OFFSET + testData.offset;
+        byte[] outputBase = new byte[testData.bytes.length];
+        long outputAddress = testData.offset;
         put24BitLittleEndian(outputBase, outputAddress, testData.value);
         assertThat(outputBase).isEqualTo(testData.bytes);
     }

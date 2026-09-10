@@ -13,6 +13,7 @@
  */
 package io.airlift.compress.v3.zstd;
 
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Arrays;
@@ -24,7 +25,6 @@ import static io.airlift.compress.v3.zstd.Util.checkState;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.util.Objects.requireNonNull;
-import static sun.misc.Unsafe.ARRAY_BYTE_BASE_OFFSET;
 
 public class ZstdOutputStream
         extends OutputStream
@@ -49,7 +49,7 @@ public class ZstdOutputStream
             throws IOException
     {
         this.outputStream = requireNonNull(outputStream, "outputStream is null");
-        this.context = new CompressionContext(CompressionParameters.compute(DEFAULT_COMPRESSION_LEVEL, -1), ARRAY_BYTE_BASE_OFFSET, Integer.MAX_VALUE);
+        this.context = new CompressionContext(CompressionParameters.compute(DEFAULT_COMPRESSION_LEVEL, -1), 0L, Integer.MAX_VALUE);
         this.maxBufferSize = context.parameters.getWindowSize() * 4;
 
         // create output buffer large enough for a single block
@@ -174,10 +174,10 @@ public class ZstdOutputStream
             // if this is also the last chunk we know the exact size, otherwise, this is traditional streaming
             int inputSize = lastChunk ? chunkSize : -1;
 
-            int outputAddress = ARRAY_BYTE_BASE_OFFSET;
+            int outputAddress = 0;
             outputAddress += ZstdFrameCompressor.writeMagic(compressed, outputAddress, outputAddress + 4);
             outputAddress += ZstdFrameCompressor.writeFrameHeader(compressed, outputAddress, outputAddress + 14, inputSize, context.parameters.getWindowSize());
-            outputStream.write(compressed, 0, outputAddress - ARRAY_BYTE_BASE_OFFSET);
+            outputStream.write(compressed, 0, outputAddress);
         }
 
         partialHash.update(uncompressed, uncompressedOffset, chunkSize);
@@ -188,10 +188,10 @@ public class ZstdOutputStream
             int blockSize = min(chunkSize, context.parameters.getBlockSize());
             int compressedSize = ZstdFrameCompressor.writeCompressedBlock(
                     uncompressed,
-                    ARRAY_BYTE_BASE_OFFSET + uncompressedOffset,
+                    uncompressedOffset,
                     blockSize,
                     compressed,
-                    ARRAY_BYTE_BASE_OFFSET,
+                    0L,
                     compressed.length,
                     context,
                     lastChunk && blockSize == chunkSize);

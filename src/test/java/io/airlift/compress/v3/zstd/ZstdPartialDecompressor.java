@@ -15,13 +15,11 @@ package io.airlift.compress.v3.zstd;
 
 import io.airlift.compress.v3.MalformedInputException;
 
-import java.lang.foreign.MemorySegment;
 
 import static java.lang.String.format;
 import static java.util.Arrays.copyOfRange;
 import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
-import static sun.misc.Unsafe.ARRAY_BYTE_BASE_OFFSET;
 
 public class ZstdPartialDecompressor
         implements ZstdDecompressor
@@ -64,9 +62,9 @@ public class ZstdPartialDecompressor
             }
 
             decompressor.partialDecompress(
-                    inputChunk,
-                    ARRAY_BYTE_BASE_OFFSET,
-                    inputChunk.length + ARRAY_BYTE_BASE_OFFSET,
+                    (inputChunk),
+                    0,
+                    inputChunk.length,
                     outputBuffer,
                     0,
                     outputBuffer.length);
@@ -86,7 +84,7 @@ public class ZstdPartialDecompressor
     }
 
     @Override
-    public int decompress(MemorySegment input, MemorySegment output)
+    public int decompress(java.lang.foreign.MemorySegment input, java.lang.foreign.MemorySegment output)
             throws MalformedInputException
     {
         throw new UnsupportedOperationException("not yet implemented");
@@ -95,8 +93,7 @@ public class ZstdPartialDecompressor
     @Override
     public long getDecompressedSize(byte[] input, int offset, int length)
     {
-        int baseAddress = ARRAY_BYTE_BASE_OFFSET + offset;
-        return ZstdFrameDecompressor.getDecompressedSize(input, baseAddress, baseAddress + length);
+        return ZstdFrameDecompressor.getDecompressedSize((input), offset, offset + length);
     }
 
     private static void verifyRange(byte[] data, int offset, int length)

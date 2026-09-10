@@ -23,7 +23,6 @@ import static io.airlift.compress.v3.zstd.Constants.RAW_BLOCK;
 import static io.airlift.compress.v3.zstd.Constants.RLE_BLOCK;
 import static io.airlift.compress.v3.zstd.Constants.SIZE_OF_BLOCK_HEADER;
 import static io.airlift.compress.v3.zstd.Constants.SIZE_OF_INT;
-import static io.airlift.compress.v3.zstd.UnsafeUtil.UNSAFE;
 import static io.airlift.compress.v3.zstd.Util.checkArgument;
 import static io.airlift.compress.v3.zstd.Util.checkState;
 import static io.airlift.compress.v3.zstd.Util.fail;
@@ -37,7 +36,6 @@ import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.lang.Math.toIntExact;
 import static java.lang.String.format;
-import static sun.misc.Unsafe.ARRAY_BYTE_BASE_OFFSET;
 
 public class ZstdIncrementalFrameDecompressor
 {
@@ -65,9 +63,9 @@ public class ZstdIncrementalFrameDecompressor
 
     // current window buffer
     private byte[] windowBase = new byte[0];
-    private long windowAddress = ARRAY_BYTE_BASE_OFFSET;
-    private long windowLimit = ARRAY_BYTE_BASE_OFFSET;
-    private long windowPosition = ARRAY_BYTE_BASE_OFFSET;
+    private long windowAddress = 0L;
+    private long windowLimit = 0L;
+    private long windowPosition = 0L;
 
     private XxHash64 partialHash;
 
@@ -97,7 +95,7 @@ public class ZstdIncrementalFrameDecompressor
     }
 
     public void partialDecompress(
-            final Object inputBase,
+            final byte[] inputBase,
             final long inputAddress,
             final long inputLimit,
             final byte[] outputArray,
@@ -125,7 +123,7 @@ public class ZstdIncrementalFrameDecompressor
                     int freeOutputSize = outputLimit - output;
                     if (freeOutputSize > 0) {
                         int copySize = min(freeOutputSize, flushableOutputSize);
-                        System.arraycopy(windowBase, toIntExact(windowAddress - ARRAY_BYTE_BASE_OFFSET), outputArray, output, copySize);
+                        System.arraycopy(windowBase, toIntExact(windowAddress - 0L), outputArray, output, copySize);
                         if (partialHash != null) {
                             partialHash.update(outputArray, output, copySize);
                         }
@@ -182,14 +180,12 @@ public class ZstdIncrementalFrameDecompressor
                     return;
                 }
                 if (inputBufferSize >= SIZE_OF_INT) {
-                    blockHeader = UNSAFE.getInt(inputBase, input) & 0xFF_FFFF;
+                    blockHeader = Mem.getInt(inputBase, input) & 0xFF_FFFF;
                 }
                 else {
-                    blockHeader = UNSAFE.getByte(inputBase, input) & 0xFF |
-                            (UNSAFE.getByte(inputBase, input + 1) & 0xFF) << 8 |
-                            (UNSAFE.getByte(inputBase, input + 2) & 0xFF) << 16;
-                    int expected = UNSAFE.getInt(inputBase, input) & 0xFF_FFFF;
-                    verify(blockHeader == expected, input, "oops");
+                    blockHeader = Mem.getByte(inputBase, input) & 0xFF |
+                            (Mem.getByte(inputBase, input + 1) & 0xFF) << 8 |
+                            (Mem.getByte(inputBase, input + 2) & 0xFF) << 16;
                 }
                 input += SIZE_OF_BLOCK_HEADER;
                 state = State.READ_BLOCK;
@@ -253,14 +249,14 @@ public class ZstdIncrementalFrameDecompressor
                     }
 
                     // read checksum
-                    int checksum = UNSAFE.getInt(inputBase, input);
+                    int checksum = Mem.getInt(inputBase, input);
                     input += SIZE_OF_INT;
 
                     checkState(partialHash != null, "Partial hash not set");
 
                     // hash remaining frame data
                     int pendingOutputSize = toIntExact(windowPosition - windowAddress);
-                    partialHash.update(windowBase, toIntExact(windowAddress - ARRAY_BYTE_BASE_OFFSET), pendingOutputSize);
+                    partialHash.update(windowBase, toIntExact(windowAddress - 0L), pendingOutputSize);
 
                     // verify hash
                     long hash = partialHash.hash();
@@ -279,8 +275,8 @@ public class ZstdIncrementalFrameDecompressor
     {
         frameDecompressor.reset();
 
-        windowAddress = ARRAY_BYTE_BASE_OFFSET;
-        windowPosition = ARRAY_BYTE_BASE_OFFSET;
+        windowAddress = 0L;
+        windowPosition = 0L;
     }
 
     private int computeFlushableOutputSize(FrameHeader frameHeader)
@@ -307,13 +303,13 @@ public class ZstdIncrementalFrameDecompressor
             int windowContentsSize = toIntExact(windowPosition - windowAddress);
 
             // if window content is currently offset from the array base, move to the front
-            if (windowAddress != ARRAY_BYTE_BASE_OFFSET) {
+            if (windowAddress != 0L) {
                 // copy the window contents to the head of the window buffer
-                System.arraycopy(windowBase, toIntExact(windowAddress - ARRAY_BYTE_BASE_OFFSET), windowBase, 0, windowContentsSize);
-                windowAddress = ARRAY_BYTE_BASE_OFFSET;
+                System.arraycopy(windowBase, toIntExact(windowAddress - 0L), windowBase, 0, windowContentsSize);
+                windowAddress = 0L;
                 windowPosition = windowAddress + windowContentsSize;
             }
-            checkState(windowAddress == ARRAY_BYTE_BASE_OFFSET, "Window should be packed");
+            checkState(windowAddress == 0L, "Window should be packed");
 
             // if window free space is still too small, grow array
             if (windowLimit - windowPosition < maxBlockOutput) {
@@ -334,18 +330,18 @@ public class ZstdIncrementalFrameDecompressor
                     checkState(windowContentsSize + maxBlockOutput <= newWindowSize, "Computed new window size buffer is not large enough");
                 }
                 windowBase = Arrays.copyOf(windowBase, newWindowSize);
-                windowLimit = newWindowSize + ARRAY_BYTE_BASE_OFFSET;
+                windowLimit = newWindowSize;
             }
 
             checkState(windowLimit - windowPosition >= maxBlockOutput, "window buffer is too small");
         }
     }
 
-    private static int determineFrameHeaderSize(final Object inputBase, final long inputAddress, final long inputLimit)
+    private static int determineFrameHeaderSize(final byte[] inputBase, final long inputAddress, final long inputLimit)
     {
         verify(inputAddress < inputLimit, inputAddress, "Not enough input bytes");
 
-        int frameHeaderDescriptor = UNSAFE.getByte(inputBase, inputAddress) & 0xFF;
+        int frameHeaderDescriptor = Mem.getByte(inputBase, inputAddress) & 0xFF;
         boolean singleSegment = (frameHeaderDescriptor & 0b100000) != 0;
         int dictionaryDescriptor = frameHeaderDescriptor & 0b11;
         int contentSizeDescriptor = frameHeaderDescriptor >>> 6;
