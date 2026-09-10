@@ -20,6 +20,7 @@ import static io.airlift.compress.v3.lz4.Lz4Constants.MIN_MATCH;
 import static io.airlift.compress.v3.lz4.Lz4Constants.SIZE_OF_INT;
 import static io.airlift.compress.v3.lz4.Lz4Constants.SIZE_OF_LONG;
 import static io.airlift.compress.v3.lz4.Lz4Constants.SIZE_OF_SHORT;
+import static java.lang.Math.toIntExact;
 
 final class Lz4RawDecompressor
 {
@@ -39,24 +40,36 @@ final class Lz4RawDecompressor
             final long outputAddress,
             final long outputLimit)
     {
-        final long fastOutputLimit = outputLimit - SIZE_OF_LONG; // maximum offset in output buffer to which it's safe to write long-at-a-time
+        // int arithmetic throughout: every value is an index into a byte[]
+        return decompress(inputBase, toIntExact(inputAddress), toIntExact(inputLimit), outputBase, toIntExact(outputAddress), toIntExact(outputLimit));
+    }
 
-        long input = inputAddress;
-        long output = outputAddress;
+    private static int decompress(
+            final byte[] inputBase,
+            final int inputAddress,
+            final int inputLimit,
+            final byte[] outputBase,
+            final int outputAddress,
+            final int outputLimit)
+    {
+        final int fastOutputLimit = outputLimit - SIZE_OF_LONG; // maximum offset in output buffer to which it's safe to write long-at-a-time
+
+        int input = inputAddress;
+        int output = outputAddress;
 
         if (inputAddress == inputLimit) {
             throw new MalformedInputException(0, "input is empty");
         }
 
         if (outputAddress == outputLimit) {
-            if (inputLimit - inputAddress == 1 && inputBase[(int) inputAddress] == 0) {
+            if (inputLimit - inputAddress == 1 && inputBase[inputAddress] == 0) {
                 return 0;
             }
             return -1;
         }
 
         while (input < inputLimit) {
-            final int token = inputBase[(int) (input++)] & 0xFF;
+            final int token = inputBase[input++] & 0xFF;
 
             // decode literal length
             int literalLength = token >>> 4; // top-most 4 bits of token
@@ -66,7 +79,7 @@ final class Lz4RawDecompressor
                 }
                 int value;
                 do {
-                    value = inputBase[(int) (input++)] & 0xFF;
+                    value = inputBase[input++] & 0xFF;
                     literalLength += value;
                 }
                 while (value == 255 && input < inputLimit - 15);
@@ -76,8 +89,8 @@ final class Lz4RawDecompressor
             }
 
             // copy literal
-            long literalEnd = input + literalLength;
-            long literalOutputLimit = output + literalLength;
+            int literalEnd = input + literalLength;
+            int literalOutputLimit = output + literalLength;
             if (literalOutputLimit > (fastOutputLimit - MIN_MATCH) || literalEnd > inputLimit - (OFFSET_SIZE + TOKEN_SIZE + LAST_LITERAL_SIZE)) {
                 // copy the last literal and finish
                 if (literalOutputLimit > outputLimit) {
@@ -95,24 +108,22 @@ final class Lz4RawDecompressor
             }
 
             // fast copy. We may overcopy but there's enough room in input and output to not overrun them
-            int index = 0;
             do {
-                Mem.LONG_LE.set(outputBase, (int) output, (long) Mem.LONG_LE.get(inputBase, (int) input));
+                Mem.LONG_LE.set(outputBase, output, (long) Mem.LONG_LE.get(inputBase, input));
                 output += SIZE_OF_LONG;
                 input += SIZE_OF_LONG;
-                index += SIZE_OF_LONG;
             }
-            while (index < literalLength);
+            while (output < literalOutputLimit);
             output = literalOutputLimit;
 
             input = literalEnd;
 
             // get offset
             // we know we can read two bytes because of the bounds check performed before copying the literal above
-            int offset = (short) Mem.SHORT_LE.get(inputBase, (int) input) & 0xFFFF;
+            int offset = (short) Mem.SHORT_LE.get(inputBase, input) & 0xFFFF;
             input += SIZE_OF_SHORT;
 
-            long matchAddress = output - offset;
+            int matchAddress = output - offset;
             if (matchAddress < outputAddress || matchAddress >= output) {
                 throw new MalformedInputException(input - inputAddress, "offset outside destination buffer");
             }
@@ -126,7 +137,7 @@ final class Lz4RawDecompressor
                         throw new MalformedInputException(input - inputAddress);
                     }
 
-                    value = inputBase[(int) (input++)] & 0xFF;
+                    value = inputBase[input++] & 0xFF;
                     matchLength += value;
                 }
                 while (value == 255);
@@ -136,7 +147,7 @@ final class Lz4RawDecompressor
                 throw new MalformedInputException(input - inputAddress);
             }
 
-            long matchOutputLimit = output + matchLength;
+            int matchOutputLimit = output + matchLength;
 
             // at this point we have at least 12 bytes of space in the output buffer
             // due to the fastLimit check before copying a literal, so no need to check again
@@ -147,19 +158,23 @@ final class Lz4RawDecompressor
                 int increment32 = DEC_32_TABLE[offset];
                 int decrement64 = DEC_64_TABLE[offset];
 
-                outputBase[(int) output] = outputBase[(int) matchAddress];
-                outputBase[(int) (output + 1)] = outputBase[(int) (matchAddress + 1)];
-                outputBase[(int) (output + 2)] = outputBase[(int) (matchAddress + 2)];
-                outputBase[(int) (output + 3)] = outputBase[(int) (matchAddress + 3)];
-                output += SIZE_OF_INT;
-                matchAddress += increment32;
-
-                Mem.INT_LE.set(outputBase, (int) output, (int) Mem.INT_LE.get(outputBase, (int) matchAddress));
-                output += SIZE_OF_INT;
-                matchAddress -= decrement64;
+                // byte-at-a-time for the first 8 bytes: with offset < 8 the copy overlaps its own output,
+                // so a sequential byte copy reproduces the repeating pattern
+                int o = output;
+                int m = matchAddress;
+                outputBase[o] = outputBase[m];
+                outputBase[o + 1] = outputBase[m + 1];
+                outputBase[o + 2] = outputBase[m + 2];
+                outputBase[o + 3] = outputBase[m + 3];
+                outputBase[o + 4] = outputBase[m + 4];
+                outputBase[o + 5] = outputBase[m + 5];
+                outputBase[o + 6] = outputBase[m + 6];
+                outputBase[o + 7] = outputBase[m + 7];
+                output += SIZE_OF_LONG;
+                matchAddress += increment32 - decrement64;
             }
             else {
-                Mem.LONG_LE.set(outputBase, (int) output, (long) Mem.LONG_LE.get(outputBase, (int) matchAddress));
+                Mem.LONG_LE.set(outputBase, output, (long) Mem.LONG_LE.get(outputBase, matchAddress));
                 matchAddress += SIZE_OF_LONG;
                 output += SIZE_OF_LONG;
             }
@@ -170,29 +185,29 @@ final class Lz4RawDecompressor
                 }
 
                 while (output < fastOutputLimit) {
-                    Mem.LONG_LE.set(outputBase, (int) output, (long) Mem.LONG_LE.get(outputBase, (int) matchAddress));
+                    Mem.LONG_LE.set(outputBase, output, (long) Mem.LONG_LE.get(outputBase, matchAddress));
                     matchAddress += SIZE_OF_LONG;
                     output += SIZE_OF_LONG;
                 }
 
                 while (output < matchOutputLimit) {
-                    outputBase[(int) (output++)] = outputBase[(int) (matchAddress++)];
+                    outputBase[output++] = outputBase[matchAddress++];
                 }
             }
             else {
                 int i = 0;
                 do {
-                    Mem.LONG_LE.set(outputBase, (int) output, (long) Mem.LONG_LE.get(outputBase, (int) matchAddress));
+                    Mem.LONG_LE.set(outputBase, output, (long) Mem.LONG_LE.get(outputBase, matchAddress));
                     output += SIZE_OF_LONG;
                     matchAddress += SIZE_OF_LONG;
                     i += SIZE_OF_LONG;
                 }
-                while (i < matchLength - SIZE_OF_LONG); // first long copied previously
+                while (i < matchLength - SIZE_OF_LONG); // first int copied previously
             }
 
             output = matchOutputLimit; // correction in case we overcopied
         }
 
-        return (int) (output - outputAddress);
+        return output - outputAddress;
     }
 }

@@ -20,6 +20,7 @@ import static io.airlift.compress.v3.lz4.Lz4Constants.MIN_MATCH;
 import static io.airlift.compress.v3.lz4.Lz4Constants.SIZE_OF_LONG;
 import static io.airlift.compress.v3.lz4.Lz4Constants.SIZE_OF_SHORT;
 import static java.lang.Math.clamp;
+import static java.lang.Math.toIntExact;
 
 final class Lz4RawCompressor
 {
@@ -74,6 +75,19 @@ final class Lz4RawCompressor
             final long maxOutputLength,
             final int[] table)
     {
+        // int arithmetic throughout: every value is an index into a byte[]
+        return compress(inputBase, toIntExact(inputAddress), inputLength, outputBase, toIntExact(outputAddress), toIntExact(maxOutputLength), table);
+    }
+
+    private static int compress(
+            final byte[] inputBase,
+            final int inputAddress,
+            final int inputLength,
+            final byte[] outputBase,
+            final int outputAddress,
+            final int maxOutputLength,
+            final int[] table)
+    {
         int tableSize = computeTableSize(inputLength);
         Arrays.fill(table, 0, tableSize, 0);
 
@@ -87,35 +101,35 @@ final class Lz4RawCompressor
             throw new IllegalArgumentException("Max output length must be larger than " + maxCompressedLength(inputLength));
         }
 
-        long input = inputAddress;
-        long output = outputAddress;
+        int input = inputAddress;
+        int output = outputAddress;
 
-        final long inputLimit = inputAddress + inputLength;
-        final long matchFindLimit = inputLimit - MATCH_FIND_LIMIT;
-        final long matchLimit = inputLimit - LAST_LITERAL_SIZE;
+        final int inputLimit = inputAddress + inputLength;
+        final int matchFindLimit = inputLimit - MATCH_FIND_LIMIT;
+        final int matchLimit = inputLimit - LAST_LITERAL_SIZE;
 
         if (inputLength < MIN_LENGTH) {
             output = emitLastLiteral(outputBase, output, inputBase, input, inputLimit - input);
-            return (int) (output - outputAddress);
+            return output - outputAddress;
         }
 
-        long anchor = input;
+        int anchor = input;
 
         // First Byte
         // put position in hash
-        table[hash((long) Mem.LONG_LE.get(inputBase, (int) input), mask)] = (int) (input - inputAddress);
+        table[hash((long) Mem.LONG_LE.get(inputBase, input), mask)] = input - inputAddress;
 
         input++;
-        int nextHash = hash((long) Mem.LONG_LE.get(inputBase, (int) input), mask);
+        int nextHash = hash((long) Mem.LONG_LE.get(inputBase, input), mask);
 
         boolean done = false;
         do {
-            long nextInputIndex = input;
+            int nextInputIndex = input;
             int findMatchAttempts = 1 << SKIP_TRIGGER;
             int step = 1;
 
             // find 4-byte match
-            long matchIndex;
+            int matchIndex;
             do {
                 int hash = nextHash;
                 input = nextInputIndex;
@@ -124,26 +138,26 @@ final class Lz4RawCompressor
                 step = (findMatchAttempts++) >>> SKIP_TRIGGER;
 
                 if (nextInputIndex > matchFindLimit) {
-                    return (int) (emitLastLiteral(outputBase, output, inputBase, anchor, inputLimit - anchor) - outputAddress);
+                    return emitLastLiteral(outputBase, output, inputBase, anchor, inputLimit - anchor) - outputAddress;
                 }
 
                 // get position on hash
                 matchIndex = inputAddress + table[hash];
-                nextHash = hash((long) Mem.LONG_LE.get(inputBase, (int) nextInputIndex), mask);
+                nextHash = hash((long) Mem.LONG_LE.get(inputBase, nextInputIndex), mask);
 
                 // put position on hash
-                table[hash] = (int) (input - inputAddress);
+                table[hash] = input - inputAddress;
             }
-            while ((int) Mem.INT_LE.get(inputBase, (int) matchIndex) != (int) Mem.INT_LE.get(inputBase, (int) input) || matchIndex + MAX_DISTANCE < input);
+            while ((int) Mem.INT_LE.get(inputBase, matchIndex) != (int) Mem.INT_LE.get(inputBase, input) || matchIndex + MAX_DISTANCE < input);
 
             // catch up
-            while ((input > anchor) && (matchIndex > inputAddress) && (inputBase[(int) (input - 1)] == inputBase[(int) (matchIndex - 1)])) {
+            while ((input > anchor) && (matchIndex > inputAddress) && (inputBase[input - 1] == inputBase[matchIndex - 1])) {
                 --input;
                 --matchIndex;
             }
 
-            int literalLength = (int) (input - anchor);
-            long tokenAddress = output;
+            int literalLength = input - anchor;
+            int tokenAddress = output;
 
             output = emitLiteral(inputBase, outputBase, anchor, literalLength, tokenAddress);
 
@@ -163,23 +177,23 @@ final class Lz4RawCompressor
                     break;
                 }
 
-                long position = input - 2;
-                table[hash((long) Mem.LONG_LE.get(inputBase, (int) position), mask)] = (int) (position - inputAddress);
+                int position = input - 2;
+                table[hash((long) Mem.LONG_LE.get(inputBase, position), mask)] = position - inputAddress;
 
                 // Test next position
-                int hash = hash((long) Mem.LONG_LE.get(inputBase, (int) input), mask);
+                int hash = hash((long) Mem.LONG_LE.get(inputBase, input), mask);
                 matchIndex = inputAddress + table[hash];
-                table[hash] = (int) (input - inputAddress);
+                table[hash] = input - inputAddress;
 
-                if (matchIndex + MAX_DISTANCE < input || (int) Mem.INT_LE.get(inputBase, (int) matchIndex) != (int) Mem.INT_LE.get(inputBase, (int) input)) {
+                if (matchIndex + MAX_DISTANCE < input || (int) Mem.INT_LE.get(inputBase, matchIndex) != (int) Mem.INT_LE.get(inputBase, input)) {
                     input++;
-                    nextHash = hash((long) Mem.LONG_LE.get(inputBase, (int) input), mask);
+                    nextHash = hash((long) Mem.LONG_LE.get(inputBase, input), mask);
                     break;
                 }
 
                 // go for another match
                 tokenAddress = output++;
-                outputBase[(int) tokenAddress] = (byte) 0;
+                outputBase[tokenAddress] = (byte) 0;
             }
         }
         while (!done);
@@ -187,16 +201,16 @@ final class Lz4RawCompressor
         // Encode Last Literals
         output = emitLastLiteral(outputBase, output, inputBase, anchor, inputLimit - anchor);
 
-        return (int) (output - outputAddress);
+        return output - outputAddress;
     }
 
-    private static long emitLiteral(byte[] inputBase, byte[] outputBase, long input, int literalLength, long output)
+    private static int emitLiteral(byte[] inputBase, byte[] outputBase, int input, int literalLength, int output)
     {
         output = encodeRunLength(outputBase, output, literalLength);
 
-        final long outputLimit = output + literalLength;
+        final int outputLimit = output + literalLength;
         do {
-            Mem.LONG_LE.set(outputBase, (int) output, (long) Mem.LONG_LE.get(inputBase, (int) input));
+            Mem.LONG_LE.set(outputBase, output, (long) Mem.LONG_LE.get(inputBase, input));
             input += SIZE_OF_LONG;
             output += SIZE_OF_LONG;
         }
@@ -205,29 +219,29 @@ final class Lz4RawCompressor
         return outputLimit;
     }
 
-    private static long emitMatch(byte[] outputBase, long output, long tokenAddress, short offset, long matchLength)
+    private static int emitMatch(byte[] outputBase, int output, int tokenAddress, short offset, int matchLength)
     {
         // write offset
-        Mem.SHORT_LE.set(outputBase, (int) output, offset);
+        Mem.SHORT_LE.set(outputBase, output, offset);
         output += SIZE_OF_SHORT;
 
         // write match length
         if (matchLength >= ML_MASK) {
-            outputBase[(int) tokenAddress] = (byte) (outputBase[(int) tokenAddress] | ML_MASK);
-            long remaining = matchLength - ML_MASK;
+            outputBase[tokenAddress] = (byte) (outputBase[tokenAddress] | ML_MASK);
+            int remaining = matchLength - ML_MASK;
             while (remaining >= 510) {
-                Mem.SHORT_LE.set(outputBase, (int) output, (short) 0xFFFF);
+                Mem.SHORT_LE.set(outputBase, output, (short) 0xFFFF);
                 output += SIZE_OF_SHORT;
                 remaining -= 510;
             }
             if (remaining >= 255) {
-                outputBase[(int) (output++)] = (byte) 255;
+                outputBase[output++] = (byte) 255;
                 remaining -= 255;
             }
-            outputBase[(int) (output++)] = (byte) remaining;
+            outputBase[output++] = (byte) remaining;
         }
         else {
-            outputBase[(int) tokenAddress] = (byte) (outputBase[(int) tokenAddress] | matchLength);
+            outputBase[tokenAddress] = (byte) (outputBase[tokenAddress] | matchLength);
         }
 
         return output;
@@ -236,17 +250,17 @@ final class Lz4RawCompressor
     /**
      * matchAddress must be < inputAddress
      */
-    static int count(byte[] inputBase, final long inputAddress, final long inputLimit, final long matchAddress)
+    static int count(byte[] inputBase, final int inputAddress, final int inputLimit, final int matchAddress)
     {
-        long input = inputAddress;
-        long match = matchAddress;
+        int input = inputAddress;
+        int match = matchAddress;
 
-        int remaining = (int) (inputLimit - inputAddress);
+        int remaining = inputLimit - inputAddress;
 
         // first, compare long at a time
         int count = 0;
         while (count < remaining - (SIZE_OF_LONG - 1)) {
-            long diff = (long) Mem.LONG_LE.get(inputBase, (int) match) ^ (long) Mem.LONG_LE.get(inputBase, (int) input);
+            long diff = (long) Mem.LONG_LE.get(inputBase, match) ^ (long) Mem.LONG_LE.get(inputBase, input);
             if (diff != 0) {
                 return count + (Long.numberOfTrailingZeros(diff) >> 3);
             }
@@ -256,7 +270,7 @@ final class Lz4RawCompressor
             match += SIZE_OF_LONG;
         }
 
-        while (count < remaining && inputBase[(int) match] == inputBase[(int) input]) {
+        while (count < remaining && inputBase[match] == inputBase[input]) {
             count++;
             match++;
             input++;
@@ -265,36 +279,36 @@ final class Lz4RawCompressor
         return count;
     }
 
-    private static long emitLastLiteral(
+    private static int emitLastLiteral(
             final byte[] outputBase,
-            final long outputAddress,
+            final int outputAddress,
             final byte[] inputBase,
-            final long inputAddress,
-            final long length)
+            final int inputAddress,
+            final int length)
     {
-        long output = encodeRunLength(outputBase, outputAddress, length);
+        int output = encodeRunLength(outputBase, outputAddress, length);
         Mem.copyMemory(inputBase, inputAddress, outputBase, output, length);
 
         return output + length;
     }
 
-    private static long encodeRunLength(
+    private static int encodeRunLength(
             final byte[] base,
-            long output,
-            final long length)
+            int output,
+            final int length)
     {
         if (length >= RUN_MASK) {
-            base[(int) (output++)] = (byte) (RUN_MASK << ML_BITS);
+            base[output++] = (byte) (RUN_MASK << ML_BITS);
 
-            long remaining = length - RUN_MASK;
+            int remaining = length - RUN_MASK;
             while (remaining >= 255) {
-                base[(int) (output++)] = (byte) 255;
+                base[output++] = (byte) 255;
                 remaining -= 255;
             }
-            base[(int) (output++)] = (byte) remaining;
+            base[output++] = (byte) remaining;
         }
         else {
-            base[(int) (output++)] = (byte) (length << ML_BITS);
+            base[output++] = (byte) (length << ML_BITS);
         }
 
         return output;
