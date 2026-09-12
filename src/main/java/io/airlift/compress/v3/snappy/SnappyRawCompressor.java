@@ -289,8 +289,12 @@ final class SnappyRawCompressor
                 outputBase[output++] = (byte) (59 + 4 << 2);
                 bytes = 4;
             }
-            // System is assumed to be little endian, so low bytes will be zero for the smaller numbers
-            Mem.INT_LE.set(outputBase, output, n);
+            // little-endian: the high bytes are zero for the smaller numbers and are overwritten by whatever follows
+            // (byte stores rather than an int VarHandle store, which C2 does not inline here)
+            outputBase[output] = (byte) n;
+            outputBase[output + 1] = (byte) (n >>> 8);
+            outputBase[output + 2] = (byte) (n >>> 16);
+            outputBase[output + 3] = (byte) (n >>> 24);
             output += bytes;
         }
         return output;

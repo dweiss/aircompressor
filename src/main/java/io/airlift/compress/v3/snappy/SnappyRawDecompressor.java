@@ -177,16 +177,20 @@ final class SnappyRawDecompressor
                         int increment32 = DEC_32_TABLE[matchOffset];
                         int decrement64 = DEC_64_TABLE[matchOffset];
 
-                        outputBase[output] = outputBase[matchAddress];
-                        outputBase[output + 1] = outputBase[matchAddress + 1];
-                        outputBase[output + 2] = outputBase[matchAddress + 2];
-                        outputBase[output + 3] = outputBase[matchAddress + 3];
-                        output += SIZE_OF_INT;
-                        matchAddress += increment32;
-
-                        Mem.INT_LE.set(outputBase, output, (int) Mem.INT_LE.get(outputBase, matchAddress));
-                        output += SIZE_OF_INT;
-                        matchAddress -= decrement64;
+                        // byte-at-a-time for the first 8 bytes: with offset < 8 the copy overlaps its own output,
+                        // so a sequential byte copy reproduces the repeating pattern
+                        int o = output;
+                        int m = matchAddress;
+                        outputBase[o] = outputBase[m];
+                        outputBase[o + 1] = outputBase[m + 1];
+                        outputBase[o + 2] = outputBase[m + 2];
+                        outputBase[o + 3] = outputBase[m + 3];
+                        outputBase[o + 4] = outputBase[m + 4];
+                        outputBase[o + 5] = outputBase[m + 5];
+                        outputBase[o + 6] = outputBase[m + 6];
+                        outputBase[o + 7] = outputBase[m + 7];
+                        output += SIZE_OF_LONG;
+                        matchAddress += increment32 - decrement64;
                     }
                     else {
                         Mem.LONG_LE.set(outputBase, output, (long) Mem.LONG_LE.get(outputBase, matchAddress));
@@ -195,15 +199,7 @@ final class SnappyRawDecompressor
                     }
 
                     if (matchOutputLimit > fastOutputLimit) {
-                        while (output < fastOutputLimit) {
-                            Mem.LONG_LE.set(outputBase, output, (long) Mem.LONG_LE.get(outputBase, matchAddress));
-                            matchAddress += SIZE_OF_LONG;
-                            output += SIZE_OF_LONG;
-                        }
-
-                        while (output < matchOutputLimit) {
-                            outputBase[output++] = outputBase[matchAddress++];
-                        }
+                        copyMatchTail(outputBase, output, matchAddress, matchOutputLimit, fastOutputLimit);
                     }
                     else {
                         while (output < matchOutputLimit) {
@@ -218,6 +214,23 @@ final class SnappyRawDecompressor
         }
 
         return output - outputAddress;
+    }
+
+    /**
+     * Rare path: the match ends within the last 8 bytes of the output buffer, where long-at-a-time copies would
+     * overrun it. Kept out of line so the hot loop stays small enough for C2 to inline everything else.
+     */
+    private static void copyMatchTail(byte[] outputBase, int output, int matchAddress, int matchOutputLimit, int fastOutputLimit)
+    {
+        while (output < fastOutputLimit) {
+            Mem.LONG_LE.set(outputBase, output, (long) Mem.LONG_LE.get(outputBase, matchAddress));
+            matchAddress += SIZE_OF_LONG;
+            output += SIZE_OF_LONG;
+        }
+
+        while (output < matchOutputLimit) {
+            outputBase[output++] = outputBase[matchAddress++];
+        }
     }
 
     // Mapping from i in range [0,4] to a mask to extract the bottom 8*i bits
