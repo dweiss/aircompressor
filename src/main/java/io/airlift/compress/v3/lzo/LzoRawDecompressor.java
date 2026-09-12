@@ -20,7 +20,6 @@ import java.util.Locale;
 import static io.airlift.compress.v3.lzo.LzoConstants.SIZE_OF_INT;
 import static io.airlift.compress.v3.lzo.LzoConstants.SIZE_OF_LONG;
 import static io.airlift.compress.v3.lzo.LzoConstants.SIZE_OF_SHORT;
-import static io.airlift.compress.v3.lzo.UnsafeUtil.UNSAFE;
 import static java.lang.Integer.toBinaryString;
 
 final class LzoRawDecompressor
@@ -32,12 +31,12 @@ final class LzoRawDecompressor
 
     @SuppressWarnings("InnerAssignment")
     public static int decompress(
-            final Object inputBase,
-            final long inputAddress,
-            final long inputLimit,
-            final Object outputBase,
-            final long outputAddress,
-            final long outputLimit)
+            final byte[] inputBase,
+            final int inputAddress,
+            final int inputLimit,
+            final byte[] outputBase,
+            final int outputAddress,
+            final int outputLimit)
             throws MalformedInputException
     {
         // nothing compresses to nothing
@@ -46,11 +45,11 @@ final class LzoRawDecompressor
         }
 
         // maximum offset in buffers to which it's safe to write long-at-a-time
-        final long fastOutputLimit = outputLimit - SIZE_OF_LONG;
+        final int fastOutputLimit = outputLimit - SIZE_OF_LONG;
 
         // LZO can concat multiple blocks together so, decode until all input data is consumed
-        long input = inputAddress;
-        long output = outputAddress;
+        int input = inputAddress;
+        int output = outputAddress;
         while (input < inputLimit) {
             boolean firstCommand = true;
             int lastLiteralLength = 0;
@@ -58,7 +57,7 @@ final class LzoRawDecompressor
                 if (input >= inputLimit) {
                     throw new MalformedInputException(input - inputAddress);
                 }
-                int command = UNSAFE.getByte(inputBase, input++) & 0xFF;
+                int command = inputBase[input++] & 0xFF;
                 // Commands are described using a bit pattern notation:
                 // 0: bit is not set
                 // 1: bit is set
@@ -91,7 +90,7 @@ final class LzoRawDecompressor
                             literalLength = 0b1111;
 
                             int nextByte = 0;
-                            while (input < inputLimit && (nextByte = UNSAFE.getByte(inputBase, input++) & 0xFF) == 0) {
+                            while (input < inputLimit && (nextByte = inputBase[input++] & 0xFF) == 0) {
                                 literalLength += 0b1111_1111;
                             }
                             literalLength += nextByte;
@@ -114,7 +113,7 @@ final class LzoRawDecompressor
                             throw new MalformedInputException(input - inputAddress);
                         }
                         matchOffset = (command & 0b1100) >>> 2;
-                        matchOffset |= (UNSAFE.getByte(inputBase, input++) & 0xFF) << 2;
+                        matchOffset |= (inputBase[input++] & 0xFF) << 2;
 
                         // literal length :: 2 bits :: valid range [0..3]
                         //   [0..1] from command [0..1]
@@ -135,7 +134,7 @@ final class LzoRawDecompressor
                             throw new MalformedInputException(input - inputAddress);
                         }
                         matchOffset = (command & 0b1100) >>> 2;
-                        matchOffset |= (UNSAFE.getByte(inputBase, input++) & 0xFF) << 2;
+                        matchOffset |= (inputBase[input++] & 0xFF) << 2;
                         matchOffset |= 0b1000_0000_0000;
 
                         // literal length :: 2 bits :: valid range [0..3]
@@ -159,7 +158,7 @@ final class LzoRawDecompressor
                         matchLength = 0b111;
 
                         int nextByte = 0;
-                        while (input < inputLimit && (nextByte = UNSAFE.getByte(inputBase, input++) & 0xFF) == 0) {
+                        while (input < inputLimit && (nextByte = inputBase[input++] & 0xFF) == 0) {
                             matchLength += 0b1111_1111;
                         }
                         matchLength += nextByte;
@@ -170,7 +169,7 @@ final class LzoRawDecompressor
                     if (input + SIZE_OF_SHORT > inputLimit) {
                         throw new MalformedInputException(input - inputAddress);
                     }
-                    int trailer = UNSAFE.getShort(inputBase, input) & 0xFFFF;
+                    int trailer = (short) Mem.SHORT_LE.get(inputBase, input) & 0xFFFF;
                     input += SIZE_OF_SHORT;
 
                     // copy offset :: 16 bits :: valid range [16383..49151]
@@ -200,7 +199,7 @@ final class LzoRawDecompressor
                         matchLength = 0b1_1111;
 
                         int nextByte = 0;
-                        while (input < inputLimit && (nextByte = UNSAFE.getByte(inputBase, input++) & 0xFF) == 0) {
+                        while (input < inputLimit && (nextByte = inputBase[input++] & 0xFF) == 0) {
                             matchLength += 0b1111_1111;
                         }
                         matchLength += nextByte;
@@ -211,7 +210,7 @@ final class LzoRawDecompressor
                     if (input + SIZE_OF_SHORT > inputLimit) {
                         throw new MalformedInputException(input - inputAddress);
                     }
-                    int trailer = UNSAFE.getShort(inputBase, input) & 0xFFFF;
+                    int trailer = (short) Mem.SHORT_LE.get(inputBase, input) & 0xFFFF;
                     input += SIZE_OF_SHORT;
 
                     // copy offset :: 14 bits :: valid range [0..16383]
@@ -238,7 +237,7 @@ final class LzoRawDecompressor
                         throw new MalformedInputException(input - inputAddress);
                     }
                     matchOffset = (command & 0b0001_1100) >>> 2;
-                    matchOffset |= (UNSAFE.getByte(inputBase, input++) & 0xFF) << 3;
+                    matchOffset |= (inputBase[input++] & 0xFF) << 3;
 
                     // literal length :: 2 bits :: valid range [0..3]
                     //   [0..1] from command [0..1]
@@ -259,16 +258,16 @@ final class LzoRawDecompressor
                     // lzo encodes match offset minus one
                     matchOffset++;
 
-                    long matchAddress = output - matchOffset;
+                    int matchAddress = output - matchOffset;
                     if (matchAddress < outputAddress || output + matchLength > outputLimit) {
                         throw new MalformedInputException(input - inputAddress);
                     }
-                    long matchOutputLimit = output + matchLength;
+                    int matchOutputLimit = output + matchLength;
 
                     if (output > fastOutputLimit) {
                         // slow match copy
                         while (output < matchOutputLimit) {
-                            UNSAFE.putByte(outputBase, output++, UNSAFE.getByte(outputBase, matchAddress++));
+                            outputBase[output++] = outputBase[matchAddress++];
                         }
                     }
                     else {
@@ -278,19 +277,19 @@ final class LzoRawDecompressor
                             int increment32 = DEC_32_TABLE[matchOffset];
                             int decrement64 = DEC_64_TABLE[matchOffset];
 
-                            UNSAFE.putByte(outputBase, output, UNSAFE.getByte(outputBase, matchAddress));
-                            UNSAFE.putByte(outputBase, output + 1, UNSAFE.getByte(outputBase, matchAddress + 1));
-                            UNSAFE.putByte(outputBase, output + 2, UNSAFE.getByte(outputBase, matchAddress + 2));
-                            UNSAFE.putByte(outputBase, output + 3, UNSAFE.getByte(outputBase, matchAddress + 3));
+                            outputBase[output] = outputBase[matchAddress];
+                            outputBase[output + 1] = outputBase[matchAddress + 1];
+                            outputBase[output + 2] = outputBase[matchAddress + 2];
+                            outputBase[output + 3] = outputBase[matchAddress + 3];
                             output += SIZE_OF_INT;
                             matchAddress += increment32;
 
-                            UNSAFE.putInt(outputBase, output, UNSAFE.getInt(outputBase, matchAddress));
+                            Mem.INT_LE.set(outputBase, output, (int) Mem.INT_LE.get(outputBase, matchAddress));
                             output += SIZE_OF_INT;
                             matchAddress -= decrement64;
                         }
                         else {
-                            UNSAFE.putLong(outputBase, output, UNSAFE.getLong(outputBase, matchAddress));
+                            Mem.LONG_LE.set(outputBase, output, (long) Mem.LONG_LE.get(outputBase, matchAddress));
                             matchAddress += SIZE_OF_LONG;
                             output += SIZE_OF_LONG;
                         }
@@ -301,18 +300,18 @@ final class LzoRawDecompressor
                             }
 
                             while (output < fastOutputLimit) {
-                                UNSAFE.putLong(outputBase, output, UNSAFE.getLong(outputBase, matchAddress));
+                                Mem.LONG_LE.set(outputBase, output, (long) Mem.LONG_LE.get(outputBase, matchAddress));
                                 matchAddress += SIZE_OF_LONG;
                                 output += SIZE_OF_LONG;
                             }
 
                             while (output < matchOutputLimit) {
-                                UNSAFE.putByte(outputBase, output++, UNSAFE.getByte(outputBase, matchAddress++));
+                                outputBase[output++] = outputBase[matchAddress++];
                             }
                         }
                         else {
                             while (output < matchOutputLimit) {
-                                UNSAFE.putLong(outputBase, output, UNSAFE.getLong(outputBase, matchAddress));
+                                Mem.LONG_LE.set(outputBase, output, (long) Mem.LONG_LE.get(outputBase, matchAddress));
                                 matchAddress += SIZE_OF_LONG;
                                 output += SIZE_OF_LONG;
                             }
@@ -325,21 +324,21 @@ final class LzoRawDecompressor
                 if (literalLength < 0) {
                     throw new MalformedInputException(input - inputAddress);
                 }
-                long literalOutputLimit = output + literalLength;
+                int literalOutputLimit = output + literalLength;
                 if (literalOutputLimit > fastOutputLimit || input + literalLength > inputLimit - SIZE_OF_LONG) {
                     if (literalOutputLimit > outputLimit || input + literalLength > inputLimit) {
                         throw new MalformedInputException(input - inputAddress);
                     }
 
                     // slow, precise copy
-                    UNSAFE.copyMemory(inputBase, input, outputBase, output, literalLength);
+                    System.arraycopy(inputBase, input, outputBase, output, literalLength);
                     input += literalLength;
                     output += literalLength;
                 }
                 else {
                     // fast copy. We may over-copy but there's enough room in input and output to not overrun them
                     do {
-                        UNSAFE.putLong(outputBase, output, UNSAFE.getLong(inputBase, input));
+                        Mem.LONG_LE.set(outputBase, output, (long) Mem.LONG_LE.get(inputBase, input));
                         input += SIZE_OF_LONG;
                         output += SIZE_OF_LONG;
                     }
@@ -350,7 +349,7 @@ final class LzoRawDecompressor
                 lastLiteralLength = literalLength;
             }
         }
-        return (int) (output - outputAddress);
+        return output - outputAddress;
     }
 
     private static String toBinary(int command)

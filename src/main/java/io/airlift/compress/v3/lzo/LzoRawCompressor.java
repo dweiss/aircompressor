@@ -18,7 +18,6 @@ import java.util.Arrays;
 import static io.airlift.compress.v3.lzo.LzoConstants.SIZE_OF_INT;
 import static io.airlift.compress.v3.lzo.LzoConstants.SIZE_OF_LONG;
 import static io.airlift.compress.v3.lzo.LzoConstants.SIZE_OF_SHORT;
-import static io.airlift.compress.v3.lzo.UnsafeUtil.UNSAFE;
 import static java.lang.Math.clamp;
 
 final class LzoRawCompressor
@@ -68,12 +67,12 @@ final class LzoRawCompressor
     }
 
     public static int compress(
-            final Object inputBase,
-            final long inputAddress,
+            final byte[] inputBase,
+            final int inputAddress,
             final int inputLength,
-            final Object outputBase,
-            final long outputAddress,
-            final long maxOutputLength,
+            final byte[] outputBase,
+            final int outputAddress,
+            final int maxOutputLength,
             final int[] table)
     {
         int tableSize = computeTableSize(inputLength);
@@ -94,36 +93,36 @@ final class LzoRawCompressor
             return 0;
         }
 
-        long input = inputAddress;
-        long output = outputAddress;
+        int input = inputAddress;
+        int output = outputAddress;
 
-        final long inputLimit = inputAddress + inputLength;
-        final long matchFindLimit = inputLimit - MATCH_FIND_LIMIT;
-        final long matchLimit = inputLimit - LAST_LITERAL_SIZE;
+        final int inputLimit = inputAddress + inputLength;
+        final int matchFindLimit = inputLimit - MATCH_FIND_LIMIT;
+        final int matchLimit = inputLimit - LAST_LITERAL_SIZE;
 
         if (inputLength < MIN_LENGTH) {
             output = emitLastLiteral(true, outputBase, output, inputBase, input, inputLimit - input);
-            return (int) (output - outputAddress);
+            return output - outputAddress;
         }
 
-        long anchor = input;
+        int anchor = input;
 
         // First Byte
         // put position in hash
-        table[hash(UNSAFE.getLong(inputBase, input), mask)] = (int) (input - inputAddress);
+        table[hash((long) Mem.LONG_LE.get(inputBase, input), mask)] = input - inputAddress;
 
         input++;
-        int nextHash = hash(UNSAFE.getLong(inputBase, input), mask);
+        int nextHash = hash((long) Mem.LONG_LE.get(inputBase, input), mask);
 
         boolean done = false;
         boolean firstLiteral = true;
         do {
-            long nextInputIndex = input;
+            int nextInputIndex = input;
             int findMatchAttempts = 1 << SKIP_TRIGGER;
             int step = 1;
 
             // find 4-byte match
-            long matchIndex;
+            int matchIndex;
             do {
                 int hash = nextHash;
                 input = nextInputIndex;
@@ -133,32 +132,32 @@ final class LzoRawCompressor
 
                 if (nextInputIndex > matchFindLimit) {
                     output = emitLastLiteral(firstLiteral, outputBase, output, inputBase, anchor, inputLimit - anchor);
-                    return (int) (output - outputAddress);
+                    return output - outputAddress;
                 }
 
                 // get position on hash
                 matchIndex = inputAddress + table[hash];
-                nextHash = hash(UNSAFE.getLong(inputBase, nextInputIndex), mask);
+                nextHash = hash((long) Mem.LONG_LE.get(inputBase, nextInputIndex), mask);
 
                 // put position on hash
-                table[hash] = (int) (input - inputAddress);
+                table[hash] = input - inputAddress;
             }
-            while (UNSAFE.getInt(inputBase, matchIndex) != UNSAFE.getInt(inputBase, input) || matchIndex + MAX_DISTANCE < input);
+            while ((int) Mem.INT_LE.get(inputBase, matchIndex) != (int) Mem.INT_LE.get(inputBase, input) || matchIndex + MAX_DISTANCE < input);
 
             // catch up
-            while ((input > anchor) && (matchIndex > inputAddress) && (UNSAFE.getByte(inputBase, input - 1) == UNSAFE.getByte(inputBase, matchIndex - 1))) {
+            while ((input > anchor) && (matchIndex > inputAddress) && (inputBase[input - 1] == inputBase[matchIndex - 1])) {
                 --input;
                 --matchIndex;
             }
 
-            int literalLength = (int) (input - anchor);
+            int literalLength = input - anchor;
 
             output = emitLiteral(firstLiteral, inputBase, anchor, outputBase, output, literalLength);
             firstLiteral = false;
 
             // next match
             while (true) {
-                int offset = (int) (input - matchIndex);
+                int offset = input - matchIndex;
 
                 // find match length
                 input += MIN_MATCH;
@@ -175,17 +174,17 @@ final class LzoRawCompressor
                     break;
                 }
 
-                long position = input - 2;
-                table[hash(UNSAFE.getLong(inputBase, position), mask)] = (int) (position - inputAddress);
+                int position = input - 2;
+                table[hash((long) Mem.LONG_LE.get(inputBase, position), mask)] = position - inputAddress;
 
                 // Test next position
-                int hash = hash(UNSAFE.getLong(inputBase, input), mask);
+                int hash = hash((long) Mem.LONG_LE.get(inputBase, input), mask);
                 matchIndex = inputAddress + table[hash];
-                table[hash] = (int) (input - inputAddress);
+                table[hash] = input - inputAddress;
 
-                if (matchIndex + MAX_DISTANCE < input || UNSAFE.getInt(inputBase, matchIndex) != UNSAFE.getInt(inputBase, input)) {
+                if (matchIndex + MAX_DISTANCE < input || (int) Mem.INT_LE.get(inputBase, matchIndex) != (int) Mem.INT_LE.get(inputBase, input)) {
                     input++;
-                    nextHash = hash(UNSAFE.getLong(inputBase, input), mask);
+                    nextHash = hash((long) Mem.LONG_LE.get(inputBase, input), mask);
                     break;
                 }
 
@@ -197,76 +196,76 @@ final class LzoRawCompressor
         // Encode Last Literals
         output = emitLastLiteral(false, outputBase, output, inputBase, anchor, inputLimit - anchor);
 
-        return (int) (output - outputAddress);
+        return output - outputAddress;
     }
 
-    private static int count(Object inputBase, final long start, long matchStart, long matchLimit)
+    private static int count(byte[] inputBase, final int start, int matchStart, int matchLimit)
     {
-        long current = start;
+        int current = start;
 
         // first, compare long at a time
         while (current < matchLimit - (SIZE_OF_LONG - 1)) {
-            long diff = UNSAFE.getLong(inputBase, matchStart) ^ UNSAFE.getLong(inputBase, current);
+            long diff = (long) Mem.LONG_LE.get(inputBase, matchStart) ^ (long) Mem.LONG_LE.get(inputBase, current);
             if (diff != 0) {
                 current += Long.numberOfTrailingZeros(diff) >> 3;
-                return (int) (current - start);
+                return current - start;
             }
 
             current += SIZE_OF_LONG;
             matchStart += SIZE_OF_LONG;
         }
 
-        if (current < matchLimit - (SIZE_OF_INT - 1) && UNSAFE.getInt(inputBase, matchStart) == UNSAFE.getInt(inputBase, current)) {
+        if (current < matchLimit - (SIZE_OF_INT - 1) && (int) Mem.INT_LE.get(inputBase, matchStart) == (int) Mem.INT_LE.get(inputBase, current)) {
             current += SIZE_OF_INT;
             matchStart += SIZE_OF_INT;
         }
 
-        if (current < matchLimit - (SIZE_OF_SHORT - 1) && UNSAFE.getShort(inputBase, matchStart) == UNSAFE.getShort(inputBase, current)) {
+        if (current < matchLimit - (SIZE_OF_SHORT - 1) && (short) Mem.SHORT_LE.get(inputBase, matchStart) == (short) Mem.SHORT_LE.get(inputBase, current)) {
             current += SIZE_OF_SHORT;
             matchStart += SIZE_OF_SHORT;
         }
 
-        if (current < matchLimit && UNSAFE.getByte(inputBase, matchStart) == UNSAFE.getByte(inputBase, current)) {
+        if (current < matchLimit && inputBase[matchStart] == inputBase[current]) {
             ++current;
         }
 
-        return (int) (current - start);
+        return current - start;
     }
 
-    private static long emitLastLiteral(
+    private static int emitLastLiteral(
             boolean firstLiteral,
-            final Object outputBase,
-            long output,
-            final Object inputBase,
-            final long inputAddress,
-            final long literalLength)
+            final byte[] outputBase,
+            int output,
+            final byte[] inputBase,
+            final int inputAddress,
+            final int literalLength)
     {
         output = encodeLiteralLength(firstLiteral, outputBase, output, literalLength);
-        UNSAFE.copyMemory(inputBase, inputAddress, outputBase, output, literalLength);
+        System.arraycopy(inputBase, inputAddress, outputBase, output, literalLength);
         output += literalLength;
 
         // write stop command
         // this is a 0b0001_HMMM command with a zero match offset
-        UNSAFE.putByte(outputBase, output++, (byte) 0b0001_0001);
-        UNSAFE.putShort(outputBase, output, (byte) 0);
+        outputBase[output++] = (byte) 0b0001_0001;
+        Mem.SHORT_LE.set(outputBase, output, (short) 0);
         output += SIZE_OF_SHORT;
 
         return output;
     }
 
-    private static long emitLiteral(
+    private static int emitLiteral(
             boolean firstLiteral,
-            Object inputBase,
-            long input,
-            Object outputBase,
-            long output,
+            byte[] inputBase,
+            int input,
+            byte[] outputBase,
+            int output,
             int literalLength)
     {
         output = encodeLiteralLength(firstLiteral, outputBase, output, literalLength);
 
-        final long outputLimit = output + literalLength;
+        final int outputLimit = output + literalLength;
         do {
-            UNSAFE.putLong(outputBase, output, UNSAFE.getLong(inputBase, input));
+            Mem.LONG_LE.set(outputBase, output, (long) Mem.LONG_LE.get(inputBase, input));
             input += SIZE_OF_LONG;
             output += SIZE_OF_LONG;
         }
@@ -275,40 +274,40 @@ final class LzoRawCompressor
         return outputLimit;
     }
 
-    private static long encodeLiteralLength(
+    private static int encodeLiteralLength(
             boolean firstLiteral,
-            final Object outBase,
-            long output,
-            long length)
+            final byte[] outBase,
+            int output,
+            int length)
     {
         if (firstLiteral && length < (0xFF - 17)) {
-            UNSAFE.putByte(outBase, output++, (byte) (length + 17));
+            outBase[output++] = (byte) (length + 17);
         }
         else if (length < 4) {
             // Small literals are encoded in the low two bits trailer of the previous command.  The
             // trailer is a little endian short, so we need to adjust the byte 2 back in the output.
-            UNSAFE.putByte(outBase, output - 2, (byte) (UNSAFE.getByte(outBase, output - 2) | length));
+            outBase[output - 2] = (byte) (outBase[output - 2] | length);
         }
         else {
             length -= 3;
             if (length > RUN_MASK) {
-                UNSAFE.putByte(outBase, output++, (byte) 0);
+                outBase[output++] = (byte) 0;
 
-                long remaining = length - RUN_MASK;
+                int remaining = length - RUN_MASK;
                 while (remaining > 255) {
-                    UNSAFE.putByte(outBase, output++, (byte) 0);
+                    outBase[output++] = (byte) 0;
                     remaining -= 255;
                 }
-                UNSAFE.putByte(outBase, output++, (byte) remaining);
+                outBase[output++] = (byte) remaining;
             }
             else {
-                UNSAFE.putByte(outBase, output++, (byte) length);
+                outBase[output++] = (byte) length;
             }
         }
         return output;
     }
 
-    private static long emitCopy(Object outputBase, long output, int matchOffset, int matchLength)
+    private static int emitCopy(byte[] outputBase, int output, int matchOffset, int matchLength)
     {
         if (matchOffset > MAX_DISTANCE || matchOffset < 1) {
             throw new IllegalArgumentException("Unsupported copy offset: " + matchOffset);
@@ -322,8 +321,8 @@ final class LzoRawCompressor
             matchLength--;
             matchOffset--;
 
-            UNSAFE.putByte(outputBase, output++, (byte) (((matchLength) << 5) | ((matchOffset & 0b111) << 2)));
-            UNSAFE.putByte(outputBase, output++, (byte) (matchOffset >>> 3));
+            outputBase[output++] = (byte) (((matchLength) << 5) | ((matchOffset & 0b111) << 2));
+            outputBase[output++] = (byte) (matchOffset >>> 3);
 
             return output;
         }
@@ -351,30 +350,30 @@ final class LzoRawCompressor
         return output;
     }
 
-    private static long encodeOffset(final Object outputBase, final long outputAddress, final int offset)
+    private static int encodeOffset(final byte[] outputBase, final int outputAddress, final int offset)
     {
-        UNSAFE.putShort(outputBase, outputAddress, (short) (offset << 2));
+        Mem.SHORT_LE.set(outputBase, outputAddress, (short) (offset << 2));
         return outputAddress + 2;
     }
 
-    private static long encodeMatchLength(Object outputBase, long output, int matchLength, int baseMatchLength, int command)
+    private static int encodeMatchLength(byte[] outputBase, int output, int matchLength, int baseMatchLength, int command)
     {
         if (matchLength <= baseMatchLength) {
-            UNSAFE.putByte(outputBase, output++, (byte) (command | matchLength));
+            outputBase[output++] = (byte) (command | matchLength);
         }
         else {
-            UNSAFE.putByte(outputBase, output++, (byte) command);
-            long remaining = matchLength - baseMatchLength;
+            outputBase[output++] = (byte) command;
+            int remaining = matchLength - baseMatchLength;
             while (remaining > 510) {
-                UNSAFE.putShort(outputBase, output, (short) 0);
+                Mem.SHORT_LE.set(outputBase, output, (short) 0);
                 output += SIZE_OF_SHORT;
                 remaining -= 510;
             }
             if (remaining > 255) {
-                UNSAFE.putByte(outputBase, output++, (byte) 0);
+                outputBase[output++] = (byte) 0;
                 remaining -= 255;
             }
-            UNSAFE.putByte(outputBase, output++, (byte) remaining);
+            outputBase[output++] = (byte) remaining;
         }
         return output;
     }
