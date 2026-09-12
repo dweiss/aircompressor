@@ -14,6 +14,7 @@
 package io.airlift.compress.v3.snappy;
 
 import java.lang.foreign.MemorySegment;
+import java.util.Locale;
 
 import static io.airlift.compress.v3.snappy.UnsafeUtil.getAddress;
 import static io.airlift.compress.v3.snappy.UnsafeUtil.getBase;
@@ -85,7 +86,7 @@ public final class SnappyJavaCompressor
     {
         requireNonNull(data, "data is null");
         if (offset < 0 || length < 0 || offset + length > data.length) {
-            throw new IllegalArgumentException(format("Invalid offset or length (%s, %s) in array of length %s", offset, length, data.length));
+            throw new IllegalArgumentException(format(Locale.ROOT, "Invalid offset or length (%s, %s) in array of length %s", offset, length, data.length));
         }
     }
 }

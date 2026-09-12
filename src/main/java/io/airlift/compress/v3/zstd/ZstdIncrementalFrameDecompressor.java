@@ -16,6 +16,7 @@ package io.airlift.compress.v3.zstd;
 import io.airlift.compress.v3.MalformedInputException;
 
 import java.util.Arrays;
+import java.util.Locale;
 
 import static io.airlift.compress.v3.zstd.Constants.COMPRESSED_BLOCK;
 import static io.airlift.compress.v3.zstd.Constants.MAX_BLOCK_SIZE;
@@ -103,7 +104,7 @@ public class ZstdIncrementalFrameDecompressor
             final int outputLimit)
     {
         if (inputRequired > inputLimit - inputAddress) {
-            throw new IllegalArgumentException(format(
+            throw new IllegalArgumentException(format(Locale.ROOT, 
                     "Required %s input bytes, but only %s input bytes were supplied",
                     inputRequired,
                     inputLimit - inputAddress));
@@ -261,7 +262,7 @@ public class ZstdIncrementalFrameDecompressor
                     // verify hash
                     long hash = partialHash.hash();
                     if (checksum != (int) hash) {
-                        throw new MalformedInputException(input, format("Bad checksum. Expected: %s, actual: %s", Integer.toHexString(checksum), Integer.toHexString((int) hash)));
+                        throw new MalformedInputException(input, format(Locale.ROOT, "Bad checksum. Expected: %s, actual: %s", Integer.toHexString(checksum), Integer.toHexString((int) hash)));
                     }
                 }
                 state = State.READ_FRAME_MAGIC;

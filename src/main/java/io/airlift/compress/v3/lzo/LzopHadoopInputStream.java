@@ -20,6 +20,7 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.zip.Adler32;
 import java.util.zip.CRC32;
 import java.util.zip.Checksum;
@@ -81,25 +82,25 @@ class LzopHadoopInputStream
         // lzop version: ignored
         int lzopFileVersion = readBigEndianShort(headerStream);
         if (lzopFileVersion < LZOP_FILE_VERSION_MIN) {
-            throw new IOException(format("Unsupported LZOP file version 0x%08X", lzopFileVersion));
+            throw new IOException(format(Locale.ROOT, "Unsupported LZOP file version 0x%08X", lzopFileVersion));
         }
 
         // lzo version
         int lzoVersion = readBigEndianShort(headerStream);
         if (lzoVersion > LZO_VERSION_MAX) {
-            throw new IOException(format("Unsupported LZO version 0x%08X", lzoVersion));
+            throw new IOException(format(Locale.ROOT, "Unsupported LZO version 0x%08X", lzoVersion));
         }
 
         // lzop version of the format
         int lzopFormatVersion = readBigEndianShort(headerStream);
         if (lzopFormatVersion > LZOP_FORMAT_VERSION_MAX) {
-            throw new IOException(format("Unsupported LZOP format version 0x%08X", lzopFormatVersion));
+            throw new IOException(format(Locale.ROOT, "Unsupported LZOP format version 0x%08X", lzopFormatVersion));
         }
 
         // variant: must be LZO 1X
         int variant = headerStream.read();
         if (variant != LZO_1X_VARIANT) {
-            throw new IOException(format("Unsupported LZO variant %s", variant));
+            throw new IOException(format(Locale.ROOT, "Unsupported LZO variant %s", variant));
         }
 
         // level: ignored
@@ -128,7 +129,7 @@ class LzopHadoopInputStream
 
         // no other flags are supported
         if (flags != 0) {
-            throw new IOException(format("Unsupported LZO flags 0x%08X", flags));
+            throw new IOException(format(Locale.ROOT, "Unsupported LZO flags 0x%08X", flags));
         }
 
         // output file mode: ignored

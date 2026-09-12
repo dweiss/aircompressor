@@ -15,6 +15,7 @@ package io.airlift.compress.v3.snappy;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Locale;
 
 final class SnappyInternalUtils
 {
@@ -28,7 +29,7 @@ final class SnappyInternalUtils
     {
         if (reference == null) {
             // If either of these parameters is null, the right thing happens anyway
-            throw new NullPointerException(String.format(errorMessageTemplate, errorMessageArgs));
+            throw new NullPointerException(String.format(Locale.ROOT, errorMessageTemplate, errorMessageArgs));
         }
         return reference;
     }
@@ -36,7 +37,7 @@ final class SnappyInternalUtils
     static void checkArgument(boolean expression, String errorMessageTemplate, Object... errorMessageArgs)
     {
         if (!expression) {
-            throw new IllegalArgumentException(String.format(errorMessageTemplate, errorMessageArgs));
+            throw new IllegalArgumentException(String.format(Locale.ROOT, errorMessageTemplate, errorMessageArgs));
         }
     }
 
@@ -57,19 +58,19 @@ final class SnappyInternalUtils
             return badPositionIndex(end, size, "end index");
         }
         // end < start
-        return String.format("end index (%s) must not be less than start index (%s)", end, start);
+        return String.format(Locale.ROOT, "end index (%s) must not be less than start index (%s)", end, start);
     }
 
     static String badPositionIndex(int index, int size, String desc)
     {
         if (index < 0) {
-            return String.format("%s (%s) must not be negative", desc, index);
+            return String.format(Locale.ROOT, "%s (%s) must not be negative", desc, index);
         }
         else if (size < 0) {
             throw new IllegalArgumentException("negative size: " + size);
         }
         else { // index > size
-            return String.format("%s (%s) must not be greater than size (%s)", desc, index, size);
+            return String.format(Locale.ROOT, "%s (%s) must not be greater than size (%s)", desc, index, size);
         }
     }
 

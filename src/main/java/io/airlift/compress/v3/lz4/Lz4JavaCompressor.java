@@ -14,6 +14,7 @@
 package io.airlift.compress.v3.lz4;
 
 import java.lang.foreign.MemorySegment;
+import java.util.Locale;
 
 import static io.airlift.compress.v3.lz4.Lz4RawCompressor.MAX_TABLE_SIZE;
 import static java.lang.Math.toIntExact;
@@ -97,7 +98,7 @@ public final class Lz4JavaCompressor
     {
         requireNonNull(data, "data is null");
         if (offset < 0 || length < 0 || offset + length > data.length) {
-            throw new IllegalArgumentException(format("Invalid offset or length (%s, %s) in array of length %s", offset, length, data.length));
+            throw new IllegalArgumentException(format(Locale.ROOT, "Invalid offset or length (%s, %s) in array of length %s", offset, length, data.length));
         }
     }
 }

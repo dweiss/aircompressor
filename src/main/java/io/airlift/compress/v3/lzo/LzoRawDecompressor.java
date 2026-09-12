@@ -15,6 +15,8 @@ package io.airlift.compress.v3.lzo;
 
 import io.airlift.compress.v3.MalformedInputException;
 
+import java.util.Locale;
+
 import static io.airlift.compress.v3.lzo.LzoConstants.SIZE_OF_INT;
 import static io.airlift.compress.v3.lzo.LzoConstants.SIZE_OF_LONG;
 import static io.airlift.compress.v3.lzo.LzoConstants.SIZE_OF_SHORT;
@@ -353,7 +355,7 @@ final class LzoRawDecompressor
 
     private static String toBinary(int command)
     {
-        String binaryString = String.format("%8s", toBinaryString(command)).replace(' ', '0');
+        String binaryString = String.format(Locale.ROOT, "%8s", toBinaryString(command)).replace(' ', '0');
         return "0b" + binaryString.substring(0, 4) + "_" + binaryString.substring(4);
     }
 }

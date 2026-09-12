@@ -15,6 +15,8 @@ package io.airlift.compress.v3.snappy;
 
 import io.airlift.compress.v3.MalformedInputException;
 
+import java.util.Locale;
+
 import static io.airlift.compress.v3.snappy.SnappyConstants.LITERAL;
 import static io.airlift.compress.v3.snappy.SnappyConstants.SIZE_OF_INT;
 import static io.airlift.compress.v3.snappy.SnappyConstants.SIZE_OF_LONG;
@@ -59,7 +61,7 @@ final class SnappyRawDecompressor
                 outputLimit);
 
         if (!(expectedLength == uncompressedSize)) {
-            throw new MalformedInputException(0, String.format("Recorded length is %s bytes but actual length after decompression is %s bytes ",
+            throw new MalformedInputException(0, String.format(Locale.ROOT, "Recorded length is %s bytes but actual length after decompression is %s bytes ",
                     expectedLength,
                     uncompressedSize));
         }

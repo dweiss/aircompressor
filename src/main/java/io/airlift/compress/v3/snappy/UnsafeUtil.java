@@ -19,6 +19,7 @@ import sun.misc.Unsafe;
 import java.lang.foreign.MemorySegment;
 import java.lang.reflect.Field;
 import java.nio.ByteOrder;
+import java.util.Locale;
 
 import static java.lang.String.format;
 import static sun.misc.Unsafe.ARRAY_BYTE_BASE_OFFSET;
@@ -32,7 +33,7 @@ final class UnsafeUtil
     static {
         ByteOrder order = ByteOrder.nativeOrder();
         if (!order.equals(ByteOrder.LITTLE_ENDIAN)) {
-            throw new IncompatibleJvmException(format("Snappy requires a little endian platform (found %s)", order));
+            throw new IncompatibleJvmException(format(Locale.ROOT, "Snappy requires a little endian platform (found %s)", order));
         }
 
         try {

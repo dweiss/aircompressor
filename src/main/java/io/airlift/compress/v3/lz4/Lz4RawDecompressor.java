@@ -15,6 +15,8 @@ package io.airlift.compress.v3.lz4;
 
 import io.airlift.compress.v3.MalformedInputException;
 
+import java.util.Locale;
+
 import static io.airlift.compress.v3.lz4.Lz4Constants.LAST_LITERAL_SIZE;
 import static io.airlift.compress.v3.lz4.Lz4Constants.MIN_MATCH;
 import static io.airlift.compress.v3.lz4.Lz4Constants.SIZE_OF_INT;
@@ -181,7 +183,7 @@ final class Lz4RawDecompressor
 
             if (matchOutputLimit > fastOutputLimit - MIN_MATCH) {
                 if (matchOutputLimit > outputLimit - LAST_LITERAL_SIZE) {
-                    throw new MalformedInputException(input - inputAddress, String.format("last %s bytes must be literals", LAST_LITERAL_SIZE));
+                    throw new MalformedInputException(input - inputAddress, String.format(Locale.ROOT, "last %s bytes must be literals", LAST_LITERAL_SIZE));
                 }
 
                 while (output < fastOutputLimit) {

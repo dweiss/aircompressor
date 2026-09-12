@@ -15,6 +15,8 @@ package io.airlift.compress.v3.zstd;
 
 import io.airlift.compress.v3.MalformedInputException;
 
+import java.util.Locale;
+
 import static io.airlift.compress.v3.zstd.Constants.SIZE_OF_SHORT;
 
 final class Util
@@ -69,19 +71,19 @@ final class Util
             return badPositionIndex(end, size, "end index");
         }
         // end < start
-        return String.format("end index (%s) must not be less than start index (%s)", end, start);
+        return String.format(Locale.ROOT, "end index (%s) must not be less than start index (%s)", end, start);
     }
 
     private static String badPositionIndex(int index, int size, String desc)
     {
         if (index < 0) {
-            return String.format("%s (%s) must not be negative", desc, index);
+            return String.format(Locale.ROOT, "%s (%s) must not be negative", desc, index);
         }
         else if (size < 0) {
             throw new IllegalArgumentException("negative size: " + size);
         }
         else { // index > size
-            return String.format("%s (%s) must not be greater than size (%s)", desc, index, size);
+            return String.format(Locale.ROOT, "%s (%s) must not be greater than size (%s)", desc, index, size);
         }
     }
 

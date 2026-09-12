@@ -17,6 +17,7 @@ import io.airlift.compress.v3.MalformedInputException;
 
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
+import java.util.Locale;
 import java.util.zip.DataFormatException;
 import java.util.zip.Inflater;
 
@@ -43,7 +44,7 @@ public class DeflateJavaDecompressor
                     break;
                 }
                 if (inflater.needsInput()) {
-                    throw new MalformedInputException(0, format("Premature end of input stream. Input length = %s, uncompressed length = %d", inputLength, uncompressedLength));
+                    throw new MalformedInputException(0, format(Locale.ROOT, "Premature end of input stream. Input length = %s, uncompressed length = %d", inputLength, uncompressedLength));
                 }
             }
 
@@ -93,7 +94,7 @@ public class DeflateJavaDecompressor
     {
         requireNonNull(data, "data is null");
         if (offset < 0 || length < 0 || offset + length > data.length) {
-            throw new IllegalArgumentException(format("Invalid offset or length (%s, %s) in array of length %s", offset, length, data.length));
+            throw new IllegalArgumentException(format(Locale.ROOT, "Invalid offset or length (%s, %s) in array of length %s", offset, length, data.length));
         }
     }
 }

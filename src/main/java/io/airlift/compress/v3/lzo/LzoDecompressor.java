@@ -17,6 +17,7 @@ import io.airlift.compress.v3.Decompressor;
 import io.airlift.compress.v3.MalformedInputException;
 
 import java.lang.foreign.MemorySegment;
+import java.util.Locale;
 
 import static io.airlift.compress.v3.lzo.UnsafeUtil.getAddress;
 import static io.airlift.compress.v3.lzo.UnsafeUtil.getBase;
@@ -75,7 +76,7 @@ public class LzoDecompressor
     {
         requireNonNull(data, "data is null");
         if (offset < 0 || length < 0 || offset + length > data.length) {
-            throw new IllegalArgumentException(format("Invalid offset or length (%s, %s) in array of length %s", offset, length, data.length));
+            throw new IllegalArgumentException(format(Locale.ROOT, "Invalid offset or length (%s, %s) in array of length %s", offset, length, data.length));
         }
     }
 }

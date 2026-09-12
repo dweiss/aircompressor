@@ -16,6 +16,7 @@ package io.airlift.compress.v3.zstd;
 import io.airlift.compress.v3.MalformedInputException;
 
 import java.util.Arrays;
+import java.util.Locale;
 
 import static io.airlift.compress.v3.zstd.BitInputStream.peekBits;
 import static io.airlift.compress.v3.zstd.Constants.COMPRESSED_BLOCK;
@@ -197,7 +198,7 @@ class ZstdFrameDecompressor
                 verify(input + SIZE_OF_INT <= inputLimit, input, "Not enough input bytes");
                 int checksum = (int) Mem.INT_LE.get(inputBase, input);
                 if (checksum != (int) hash) {
-                    throw new MalformedInputException(input, format("Bad checksum. Expected: %s, actual: %s", Integer.toHexString(checksum), Integer.toHexString((int) hash)));
+                    throw new MalformedInputException(input, format(Locale.ROOT, "Bad checksum. Expected: %s, actual: %s", Integer.toHexString(checksum), Integer.toHexString((int) hash)));
                 }
 
                 input += SIZE_OF_INT;

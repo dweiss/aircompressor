@@ -18,6 +18,7 @@ import io.airlift.compress.v3.xxhash.XxHash32Hasher;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.Locale;
 
 import static io.airlift.compress.v3.lz4.Lz4FrameFormat.BD_4MB;
 import static io.airlift.compress.v3.lz4.Lz4FrameFormat.BD_RESERVED_MASK;
@@ -365,7 +366,7 @@ final class Lz4FrameCompression
     {
         requireNonNull(data, "data is null");
         if (offset < 0 || length < 0 || offset + length > data.length) {
-            throw new IllegalArgumentException(format("Invalid offset or length (%s, %s) in array of length %s", offset, length, data.length));
+            throw new IllegalArgumentException(format(Locale.ROOT, "Invalid offset or length (%s, %s) in array of length %s", offset, length, data.length));
         }
     }
 }
