@@ -18,13 +18,12 @@ import io.airlift.compress.v3.MalformedInputException;
 import java.lang.foreign.MemorySegment;
 import java.util.Locale;
 
-import static io.airlift.compress.v3.snappy.UnsafeUtil.getAddress;
-import static io.airlift.compress.v3.snappy.UnsafeUtil.getBase;
 import static java.lang.Math.addExact;
+import static java.lang.Math.toIntExact;
+import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.String.format;
 import static java.lang.ref.Reference.reachabilityFence;
 import static java.util.Objects.requireNonNull;
-import static sun.misc.Unsafe.ARRAY_BYTE_BASE_OFFSET;
 
 public final class SnappyJavaDecompressor
         implements SnappyDecompressor
@@ -32,10 +31,7 @@ public final class SnappyJavaDecompressor
     @Override
     public int getUncompressedLength(byte[] compressed, int compressedOffset)
     {
-        long compressedAddress = ARRAY_BYTE_BASE_OFFSET + compressedOffset;
-        long compressedLimit = ARRAY_BYTE_BASE_OFFSET + compressed.length;
-
-        return SnappyRawDecompressor.getUncompressedLength(compressed, compressedAddress, compressedLimit);
+        return SnappyRawDecompressor.getUncompressedLength(compressed, compressedOffset, compressed.length);
     }
 
     @Override
@@ -45,12 +41,7 @@ public final class SnappyJavaDecompressor
         verifyRange(input, inputOffset, inputLength);
         verifyRange(output, outputOffset, maxOutputLength);
 
-        long inputAddress = ARRAY_BYTE_BASE_OFFSET + inputOffset;
-        long inputLimit = inputAddress + inputLength;
-        long outputAddress = ARRAY_BYTE_BASE_OFFSET + outputOffset;
-        long outputLimit = outputAddress + maxOutputLength;
-
-        return SnappyRawDecompressor.decompress(input, inputAddress, inputLimit, output, outputAddress, outputLimit);
+        return SnappyRawDecompressor.decompress(input, inputOffset, inputOffset + inputLength, output, outputOffset, outputOffset + maxOutputLength);
     }
 
     @Override
@@ -58,21 +49,38 @@ public final class SnappyJavaDecompressor
             throws MalformedInputException
     {
         try {
-            byte[] inputBase = getBase(input);
-            long inputAddress = getAddress(input);
-            long inputLimit = addExact(inputAddress, input.byteSize());
+            byte[] inputBase = Mem.heapArray(input);
+            int inputAddress = 0;
+            if (inputBase != null) {
+                inputAddress = toIntExact(input.address());
+            }
+            else {
+                inputBase = input.toArray(JAVA_BYTE);
+            }
+            int inputLimit = toIntExact(addExact(inputAddress, input.byteSize()));
 
-            byte[] outputBase = getBase(output);
-            long outputAddress = getAddress(output);
-            long outputLimit = addExact(outputAddress, output.byteSize());
+            byte[] outputBase = Mem.heapArray(output);
+            int outputAddress = 0;
+            boolean copyOutput = outputBase == null;
+            if (copyOutput) {
+                outputBase = new byte[toIntExact(output.byteSize())];
+            }
+            else {
+                outputAddress = toIntExact(output.address());
+            }
+            int outputLimit = toIntExact(addExact(outputAddress, output.byteSize()));
 
-            return SnappyRawDecompressor.decompress(
+            int written = SnappyRawDecompressor.decompress(
                     inputBase,
                     inputAddress,
                     inputLimit,
                     outputBase,
                     outputAddress,
                     outputLimit);
+            if (copyOutput) {
+                MemorySegment.copy(MemorySegment.ofArray(outputBase), 0, output, 0, written);
+            }
+            return written;
         }
         finally {
             reachabilityFence(input);

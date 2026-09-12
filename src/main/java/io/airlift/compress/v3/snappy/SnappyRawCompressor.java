@@ -20,7 +20,6 @@ import static io.airlift.compress.v3.snappy.SnappyConstants.COPY_2_BYTE_OFFSET;
 import static io.airlift.compress.v3.snappy.SnappyConstants.SIZE_OF_INT;
 import static io.airlift.compress.v3.snappy.SnappyConstants.SIZE_OF_LONG;
 import static io.airlift.compress.v3.snappy.SnappyConstants.SIZE_OF_SHORT;
-import static io.airlift.compress.v3.snappy.UnsafeUtil.UNSAFE;
 import static java.lang.Math.clamp;
 
 final class SnappyRawCompressor
@@ -72,30 +71,30 @@ final class SnappyRawCompressor
     // suppress warnings is required to use assert
     @SuppressWarnings("IllegalToken")
     public static int compress(
-            final Object inputBase,
-            final long inputAddress,
-            final long inputLimit,
-            final Object outputBase,
-            final long outputAddress,
-            final long outputLimit,
+            final byte[] inputBase,
+            final int inputAddress,
+            final int inputLimit,
+            final byte[] outputBase,
+            final int outputAddress,
+            final int outputLimit,
             final short[] table)
     {
         // The compression code assumes output is larger than the max compression size (with 32 bytes of
         // extra padding), and does not check bounds for writing to output.
-        int maxCompressedLength = maxCompressedLength((int) (inputLimit - inputAddress));
+        int maxCompressedLength = maxCompressedLength(inputLimit - inputAddress);
         if (outputLimit - outputAddress < maxCompressedLength) {
             throw new IllegalArgumentException("Output buffer must be at least " + maxCompressedLength + " bytes");
         }
 
         // First write the uncompressed size to the output as a variable length int
-        long output = writeUncompressedLength(outputBase, outputAddress, (int) (inputLimit - inputAddress));
+        int output = writeUncompressedLength(outputBase, outputAddress, inputLimit - inputAddress);
 
-        for (long blockAddress = inputAddress; blockAddress < inputLimit; blockAddress += BLOCK_SIZE) {
-            final long blockLimit = Math.min(inputLimit, blockAddress + BLOCK_SIZE);
-            long input = blockAddress;
+        for (int blockAddress = inputAddress; blockAddress < inputLimit; blockAddress += BLOCK_SIZE) {
+            final int blockLimit = Math.min(inputLimit, blockAddress + BLOCK_SIZE);
+            int input = blockAddress;
             assert blockLimit - blockAddress <= BLOCK_SIZE;
 
-            int blockHashTableSize = getHashTableSize((int) (blockLimit - blockAddress));
+            int blockHashTableSize = getHashTableSize(blockLimit - blockAddress);
             Arrays.fill(table, 0, blockHashTableSize, (short) 0);
 
             // todo given that hashTableSize is required to be a power of 2, this is overly complex
@@ -105,9 +104,9 @@ final class SnappyRawCompressor
 
             // Bytes in [nextEmitAddress, input) will be emitted as literal bytes.  Or
             // [nextEmitAddress, inputLimit) after the main loop.
-            long nextEmitAddress = input;
+            int nextEmitAddress = input;
 
-            final long fastInputLimit = blockLimit - INPUT_MARGIN_BYTES;
+            final int fastInputLimit = blockLimit - INPUT_MARGIN_BYTES;
             while (input <= fastInputLimit) {
                 assert nextEmitAddress <= input;
 
@@ -137,10 +136,10 @@ final class SnappyRawCompressor
                 // number of bytes to move ahead for each iteration.
                 int skip = 32;
 
-                long candidateIndex = 0;
+                int candidateIndex = 0;
                 for (input += 1; input + (skip >>> 5) <= fastInputLimit; input += ((skip++) >>> 5)) {
                     // hash the 4 bytes starting at the input pointer
-                    int currentInt = UNSAFE.getInt(inputBase, input);
+                    int currentInt = (int) Mem.INT_LE.get(inputBase, input);
                     int hash = hashBytes(currentInt, shift);
 
                     // get the position of a 4 bytes sequence with the same hash
@@ -153,7 +152,7 @@ final class SnappyRawCompressor
 
                     // if the 4 byte sequence a the candidate index matches the sequence at the
                     // current position, proceed to the next phase
-                    if (currentInt == UNSAFE.getInt(inputBase, candidateIndex)) {
+                    if (currentInt == (int) Mem.INT_LE.get(inputBase, candidateIndex)) {
                         break;
                     }
                 }
@@ -166,7 +165,7 @@ final class SnappyRawCompressor
                 // bytes [nextEmit, ip) are unmatched.  Emit them as "literal bytes."
                 assert nextEmitAddress + 16 <= blockLimit;
 
-                int literalLength = (int) (input - nextEmitAddress);
+                int literalLength = input - nextEmitAddress;
                 output = emitLiteralLength(outputBase, output, literalLength);
 
                 // Fast copy can use 8 extra bytes of input and output, which is safe because:
@@ -203,7 +202,7 @@ final class SnappyRawCompressor
 
                     // We could immediately start working at input now, but to improve
                     // compression we first update table[Hash(ip - 1, ...)].
-                    long longValue = UNSAFE.getLong(inputBase, input - 1);
+                    long longValue = (long) Mem.LONG_LE.get(inputBase, input - 1);
                     int prevInt = (int) longValue;
                     inputBytes = (int) (longValue >>> 8);
 
@@ -216,92 +215,92 @@ final class SnappyRawCompressor
 
                     candidateIndex = blockAddress + (table[curHash] & 0xFFFF);
                     table[curHash] = (short) (input - blockAddress);
-                } while (inputBytes == UNSAFE.getInt(inputBase, candidateIndex));
+                } while (inputBytes == (int) Mem.INT_LE.get(inputBase, candidateIndex));
                 nextEmitAddress = input;
             }
 
             // Emit the remaining bytes as a literal
             if (nextEmitAddress < blockLimit) {
-                int literalLength = (int) (blockLimit - nextEmitAddress);
+                int literalLength = blockLimit - nextEmitAddress;
                 output = emitLiteralLength(outputBase, output, literalLength);
-                UNSAFE.copyMemory(inputBase, nextEmitAddress, outputBase, output, literalLength);
+                System.arraycopy(inputBase, nextEmitAddress, outputBase, output, literalLength);
                 output += literalLength;
             }
         }
 
-        return (int) (output - outputAddress);
+        return output - outputAddress;
     }
 
-    private static int count(Object inputBase, final long start, long matchStart, long matchLimit)
+    private static int count(byte[] inputBase, final int start, int matchStart, int matchLimit)
     {
-        long current = start;
+        int current = start;
 
         // first, compare long at a time
         while (current < matchLimit - (SIZE_OF_LONG - 1)) {
-            long diff = UNSAFE.getLong(inputBase, matchStart) ^ UNSAFE.getLong(inputBase, current);
+            long diff = (long) Mem.LONG_LE.get(inputBase, matchStart) ^ (long) Mem.LONG_LE.get(inputBase, current);
             if (diff != 0) {
                 current += Long.numberOfTrailingZeros(diff) >> 3;
-                return (int) (current - start);
+                return current - start;
             }
 
             current += SIZE_OF_LONG;
             matchStart += SIZE_OF_LONG;
         }
 
-        if (current < matchLimit - (SIZE_OF_INT - 1) && UNSAFE.getInt(inputBase, matchStart) == UNSAFE.getInt(inputBase, current)) {
+        if (current < matchLimit - (SIZE_OF_INT - 1) && (int) Mem.INT_LE.get(inputBase, matchStart) == (int) Mem.INT_LE.get(inputBase, current)) {
             current += SIZE_OF_INT;
             matchStart += SIZE_OF_INT;
         }
 
-        if (current < matchLimit - (SIZE_OF_SHORT - 1) && UNSAFE.getShort(inputBase, matchStart) == UNSAFE.getShort(inputBase, current)) {
+        if (current < matchLimit - (SIZE_OF_SHORT - 1) && (short) Mem.SHORT_LE.get(inputBase, matchStart) == (short) Mem.SHORT_LE.get(inputBase, current)) {
             current += SIZE_OF_SHORT;
             matchStart += SIZE_OF_SHORT;
         }
 
-        if (current < matchLimit && UNSAFE.getByte(inputBase, matchStart) == UNSAFE.getByte(inputBase, current)) {
+        if (current < matchLimit && inputBase[matchStart] == inputBase[current]) {
             ++current;
         }
 
-        return (int) (current - start);
+        return current - start;
     }
 
-    private static long emitLiteralLength(Object outputBase, long output, int literalLength)
+    private static int emitLiteralLength(byte[] outputBase, int output, int literalLength)
     {
         int n = literalLength - 1;      // Zero-length literals are disallowed
         if (n < 60) {
             // Size fits in tag byte
-            UNSAFE.putByte(outputBase, output++, (byte) (n << 2));
+            outputBase[output++] = (byte) (n << 2);
         }
         else {
             int bytes;
             if (n < (1 << 8)) {
-                UNSAFE.putByte(outputBase, output++, (byte) (59 + 1 << 2));
+                outputBase[output++] = (byte) (59 + 1 << 2);
                 bytes = 1;
             }
             else if (n < (1 << 16)) {
-                UNSAFE.putByte(outputBase, output++, (byte) (59 + 2 << 2));
+                outputBase[output++] = (byte) (59 + 2 << 2);
                 bytes = 2;
             }
             else if (n < (1 << 24)) {
-                UNSAFE.putByte(outputBase, output++, (byte) (59 + 3 << 2));
+                outputBase[output++] = (byte) (59 + 3 << 2);
                 bytes = 3;
             }
             else {
-                UNSAFE.putByte(outputBase, output++, (byte) (59 + 4 << 2));
+                outputBase[output++] = (byte) (59 + 4 << 2);
                 bytes = 4;
             }
             // System is assumed to be little endian, so low bytes will be zero for the smaller numbers
-            UNSAFE.putInt(outputBase, output, n);
+            Mem.INT_LE.set(outputBase, output, n);
             output += bytes;
         }
         return output;
     }
 
-    private static long fastCopy(final Object inputBase, long input, final Object outputBase, long output, final int literalLength)
+    private static int fastCopy(final byte[] inputBase, int input, final byte[] outputBase, int output, final int literalLength)
     {
-        final long outputLimit = output + literalLength;
+        final int outputLimit = output + literalLength;
         do {
-            UNSAFE.putLong(outputBase, output, UNSAFE.getLong(inputBase, input));
+            Mem.LONG_LE.set(outputBase, output, (long) Mem.LONG_LE.get(inputBase, input));
             input += SIZE_OF_LONG;
             output += SIZE_OF_LONG;
         }
@@ -309,14 +308,14 @@ final class SnappyRawCompressor
         return outputLimit;
     }
 
-    private static long emitCopy(Object outputBase, long output, long input, long matchIndex, int matchLength)
+    private static int emitCopy(byte[] outputBase, int output, int input, int matchIndex, int matchLength)
     {
-        long offset = input - matchIndex;
+        int offset = input - matchIndex;
 
         // Emit 64 byte copies but make sure to keep at least four bytes reserved
         while (matchLength >= 68) {
-            UNSAFE.putByte(outputBase, output++, (byte) (COPY_2_BYTE_OFFSET + ((64 - 1) << 2)));
-            UNSAFE.putShort(outputBase, output, (short) offset);
+            outputBase[output++] = (byte) (COPY_2_BYTE_OFFSET + ((64 - 1) << 2));
+            Mem.SHORT_LE.set(outputBase, output, (short) offset);
             output += SIZE_OF_SHORT;
             matchLength -= 64;
         }
@@ -324,8 +323,8 @@ final class SnappyRawCompressor
         // Emit an extra 60 byte copy if have too much data to fit in one copy
         // length < 68
         if (matchLength > 64) {
-            UNSAFE.putByte(outputBase, output++, (byte) (COPY_2_BYTE_OFFSET + ((60 - 1) << 2)));
-            UNSAFE.putShort(outputBase, output, (short) offset);
+            outputBase[output++] = (byte) (COPY_2_BYTE_OFFSET + ((60 - 1) << 2));
+            Mem.SHORT_LE.set(outputBase, output, (short) offset);
             output += SIZE_OF_SHORT;
             matchLength -= 60;
         }
@@ -333,12 +332,12 @@ final class SnappyRawCompressor
         // Emit remainder
         if ((matchLength < 12) && (offset < 2048)) {
             int lenMinus4 = matchLength - 4;
-            UNSAFE.putByte(outputBase, output++, (byte) (COPY_1_BYTE_OFFSET + ((lenMinus4) << 2) + ((offset >>> 8) << 5)));
-            UNSAFE.putByte(outputBase, output++, (byte) (offset));
+            outputBase[output++] = (byte) (COPY_1_BYTE_OFFSET + ((lenMinus4) << 2) + ((offset >>> 8) << 5));
+            outputBase[output++] = (byte) (offset);
         }
         else {
-            UNSAFE.putByte(outputBase, output++, (byte) (COPY_2_BYTE_OFFSET + ((matchLength - 1) << 2)));
-            UNSAFE.putShort(outputBase, output, (short) offset);
+            outputBase[output++] = (byte) (COPY_2_BYTE_OFFSET + ((matchLength - 1) << 2));
+            Mem.SHORT_LE.set(outputBase, output, (short) offset);
             output += SIZE_OF_SHORT;
         }
         return output;
@@ -380,32 +379,32 @@ final class SnappyRawCompressor
     /**
      * Writes the uncompressed length as variable length integer.
      */
-    private static long writeUncompressedLength(Object outputBase, long outputAddress, int uncompressedLength)
+    private static int writeUncompressedLength(byte[] outputBase, int outputAddress, int uncompressedLength)
     {
         if (uncompressedLength < (1 << 7) && uncompressedLength >= 0) {
-            UNSAFE.putByte(outputBase, outputAddress++, (byte) (uncompressedLength));
+            outputBase[outputAddress++] = (byte) (uncompressedLength);
         }
         else if (uncompressedLength < (1 << 14) && uncompressedLength > 0) {
-            UNSAFE.putByte(outputBase, outputAddress++, (byte) (uncompressedLength | HIGH_BIT_MASK));
-            UNSAFE.putByte(outputBase, outputAddress++, (byte) (uncompressedLength >>> 7));
+            outputBase[outputAddress++] = (byte) (uncompressedLength | HIGH_BIT_MASK);
+            outputBase[outputAddress++] = (byte) (uncompressedLength >>> 7);
         }
         else if (uncompressedLength < (1 << 21) && uncompressedLength > 0) {
-            UNSAFE.putByte(outputBase, outputAddress++, (byte) (uncompressedLength | HIGH_BIT_MASK));
-            UNSAFE.putByte(outputBase, outputAddress++, (byte) ((uncompressedLength >>> 7) | HIGH_BIT_MASK));
-            UNSAFE.putByte(outputBase, outputAddress++, (byte) (uncompressedLength >>> 14));
+            outputBase[outputAddress++] = (byte) (uncompressedLength | HIGH_BIT_MASK);
+            outputBase[outputAddress++] = (byte) ((uncompressedLength >>> 7) | HIGH_BIT_MASK);
+            outputBase[outputAddress++] = (byte) (uncompressedLength >>> 14);
         }
         else if (uncompressedLength < (1 << 28) && uncompressedLength > 0) {
-            UNSAFE.putByte(outputBase, outputAddress++, (byte) (uncompressedLength | HIGH_BIT_MASK));
-            UNSAFE.putByte(outputBase, outputAddress++, (byte) ((uncompressedLength >>> 7) | HIGH_BIT_MASK));
-            UNSAFE.putByte(outputBase, outputAddress++, (byte) ((uncompressedLength >>> 14) | HIGH_BIT_MASK));
-            UNSAFE.putByte(outputBase, outputAddress++, (byte) (uncompressedLength >>> 21));
+            outputBase[outputAddress++] = (byte) (uncompressedLength | HIGH_BIT_MASK);
+            outputBase[outputAddress++] = (byte) ((uncompressedLength >>> 7) | HIGH_BIT_MASK);
+            outputBase[outputAddress++] = (byte) ((uncompressedLength >>> 14) | HIGH_BIT_MASK);
+            outputBase[outputAddress++] = (byte) (uncompressedLength >>> 21);
         }
         else {
-            UNSAFE.putByte(outputBase, outputAddress++, (byte) (uncompressedLength | HIGH_BIT_MASK));
-            UNSAFE.putByte(outputBase, outputAddress++, (byte) ((uncompressedLength >>> 7) | HIGH_BIT_MASK));
-            UNSAFE.putByte(outputBase, outputAddress++, (byte) ((uncompressedLength >>> 14) | HIGH_BIT_MASK));
-            UNSAFE.putByte(outputBase, outputAddress++, (byte) ((uncompressedLength >>> 21) | HIGH_BIT_MASK));
-            UNSAFE.putByte(outputBase, outputAddress++, (byte) (uncompressedLength >>> 28));
+            outputBase[outputAddress++] = (byte) (uncompressedLength | HIGH_BIT_MASK);
+            outputBase[outputAddress++] = (byte) ((uncompressedLength >>> 7) | HIGH_BIT_MASK);
+            outputBase[outputAddress++] = (byte) ((uncompressedLength >>> 14) | HIGH_BIT_MASK);
+            outputBase[outputAddress++] = (byte) ((uncompressedLength >>> 21) | HIGH_BIT_MASK);
+            outputBase[outputAddress++] = (byte) (uncompressedLength >>> 28);
         }
         return outputAddress;
     }
