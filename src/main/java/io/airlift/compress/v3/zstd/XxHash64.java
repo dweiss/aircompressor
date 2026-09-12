@@ -22,8 +22,8 @@ import static java.lang.Long.rotateLeft;
 import static java.lang.Math.min;
 
 // Forked from https://github.com/airlift/slice
-// This Unsafe-based implementation exists only to serve the Zstd Java implementation,
-// which also uses Unsafe throughout. For public use, see io.airlift.compress.v3.xxhash.XxHash64Hasher
+// This implementation exists only to serve the Zstd Java implementation and shares its
+// byte[] + VarHandle memory access. For public use, see io.airlift.compress.v3.xxhash.XxHash64Hasher
 final class XxHash64
 {
     private static final long PRIME64_1 = 0x9E3779B185EBCA87L;

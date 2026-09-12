@@ -2,9 +2,10 @@
 [![Maven Central](https://img.shields.io/maven-central/v/io.airlift/aircompressor-v3.svg?label=Maven%20Central)](https://search.maven.org/#search%7Cga%7C1%7Cg%3A%22io.airlift%22%20AND%20a%3A%22aircompressor-v3%22)
 
 This library provides a set of compression algorithms implemented in pure Java and 
-where possible native implementations. The Java implementations use `sun.misc.Unsafe`
-to provide fast access to memory. The native implementations use `java.lang.foreign`
-to interact directly with native libraries without the need for JNI.
+where possible native implementations. The Java implementations access memory through
+`byte[]` arrays and `VarHandle` views only, without `sun.misc.Unsafe`. The native
+implementations use `java.lang.foreign` to interact directly with native libraries
+without the need for JNI.
 
 # Usage
 
@@ -184,7 +185,7 @@ that have Hadoop dependencies, each algorithm also provides a `CompressionCodec`
 
 # Requirements
 
-This library requires a Java 22+ virtual machine containing the `sun.misc.Unsafe` interface running on a little endian platform.
+This library requires a Java 22+ virtual machine. It does not use `sun.misc.Unsafe` and does not depend on the platform's byte order.
 
 # Configuration
 
