@@ -24,6 +24,7 @@ class BZip2HadoopInputStream
         extends HadoopInputStream
 {
     private final BufferedInputStream bufferedIn;
+    private final byte[] oneByte = new byte[1];
     private CBZip2InputStream input;
 
     public BZip2HadoopInputStream(InputStream in)
@@ -48,27 +49,18 @@ class BZip2HadoopInputStream
             input = new CBZip2InputStream(bufferedIn);
         }
 
-        int result = input.read(buffer, offset, length);
-
-        // if the result is the end of block marker, no data was read
-        if (result == CBZip2InputStream.END_OF_BLOCK) {
-            // read one byte into the new block and update the position.
-            result = input.read(buffer, offset, 1);
-        }
-
-        return result;
+        return input.read(buffer, offset, length);
     }
 
     @Override
     public int read()
             throws IOException
     {
-        byte[] buffer = new byte[1];
-        int result = read(buffer, 0, 1);
+        int result = read(oneByte, 0, 1);
         if (result < 0) {
             return result;
         }
-        return buffer[0] & 0xff;
+        return oneByte[0] & 0xff;
     }
 
     @Override

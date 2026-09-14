@@ -178,6 +178,8 @@ try (XxHash32Hasher hasher = XxHash32Hasher.create()) {
 In addition to the raw block encoders, there are implementations of the
 Hadoop streams for the above algorithms. In addition, implementations of
 gzip and bzip2 are provided so that all standard Hadoop algorithms are available.
+The bzip2 decompressor is pure Java, reads its input in 64 KiB chunks and also
+decompresses concatenated bzip2 streams (for example the output of `pbzip2`).
 
 The `HadoopStreams` class provides a factory for creating `InputStream` and `OutputStream`
 implementations without the need for any Hadoop dependencies.  For environments 

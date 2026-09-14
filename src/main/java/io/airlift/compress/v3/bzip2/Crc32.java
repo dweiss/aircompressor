@@ -69,6 +69,25 @@ final class Crc32
             0xafb010b1, 0xab710d06, 0xa6322bdf, 0xa2f33668, 0xbcb4666d,
             0xb8757bda, 0xb5365d03, 0xb1f740b4};
 
+    /**
+     * Slicing-by-8 tables: {@code SLICE[k][i]} is the CRC contribution of byte
+     * {@code i} followed by {@code k} zero bytes; {@code SLICE[0]} is {@link #CRC_32_TABLE}.
+     */
+    private static final int[][] SLICE = new int[8][];
+
+    static {
+        SLICE[0] = CRC_32_TABLE;
+        for (int k = 1; k < SLICE.length; k++) {
+            int[] prev = SLICE[k - 1];
+            int[] next = new int[256];
+            for (int i = 0; i < 256; i++) {
+                int c = prev[i];
+                next[i] = (c << 8) ^ CRC_32_TABLE[c >>> 24];
+            }
+            SLICE[k] = next;
+        }
+    }
+
     private int globalCrc;
 
     Crc32()
@@ -93,6 +112,42 @@ final class Crc32
             temp = 256 + temp;
         }
         globalCrc = (globalCrc << 8) ^ CRC_32_TABLE[temp];
+    }
+
+    /**
+     * Updates the CRC with a range of bytes.
+     */
+    void updateCRC(byte[] buf, int off, int len)
+    {
+        int[] t0 = SLICE[0];
+        int[] t1 = SLICE[1];
+        int[] t2 = SLICE[2];
+        int[] t3 = SLICE[3];
+        int[] t4 = SLICE[4];
+        int[] t5 = SLICE[5];
+        int[] t6 = SLICE[6];
+        int[] t7 = SLICE[7];
+        int c = this.globalCrc;
+        int end = off + len;
+        int i = off;
+        for (; i + 8 <= end; i += 8) {
+            int w = c ^ ((buf[i] << 24)
+                    | ((buf[i + 1] & 0xff) << 16)
+                    | ((buf[i + 2] & 0xff) << 8)
+                    | (buf[i + 3] & 0xff));
+            c = t7[w >>> 24]
+                    ^ t6[(w >>> 16) & 0xff]
+                    ^ t5[(w >>> 8) & 0xff]
+                    ^ t4[w & 0xff]
+                    ^ t3[buf[i + 4] & 0xff]
+                    ^ t2[buf[i + 5] & 0xff]
+                    ^ t1[buf[i + 6] & 0xff]
+                    ^ t0[buf[i + 7] & 0xff];
+        }
+        for (; i < end; i++) {
+            c = (c << 8) ^ t0[((c >>> 24) ^ buf[i]) & 0xff];
+        }
+        this.globalCrc = c;
     }
 
     void updateCRC(int value, int repeat)

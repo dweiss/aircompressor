@@ -11,6 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 /*
  * This package is based on the work done by Keiron Liddle, Aftex Software
  * <keiron@aftexsw.com> to whom the Ant project is very grateful for his
@@ -18,15 +19,16 @@
  */
 package io.airlift.compress.v3.bzip2;
 
-import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Arrays;
 
+import static io.airlift.compress.v3.bzip2.BZip2Constants.BASE_BLOCK_SIZE;
 import static io.airlift.compress.v3.bzip2.BZip2Constants.G_SIZE;
 import static io.airlift.compress.v3.bzip2.BZip2Constants.MAX_ALPHA_SIZE;
+import static io.airlift.compress.v3.bzip2.BZip2Constants.MAX_CODE_LEN;
 import static io.airlift.compress.v3.bzip2.BZip2Constants.MAX_SELECTORS;
 import static io.airlift.compress.v3.bzip2.BZip2Constants.N_GROUPS;
-import static io.airlift.compress.v3.bzip2.BZip2Constants.RUN_A;
 import static io.airlift.compress.v3.bzip2.BZip2Constants.RUN_B;
 
 /**
@@ -42,60 +44,48 @@ import static io.airlift.compress.v3.bzip2.BZip2Constants.RUN_B;
  * </p>
  *
  * <p>
- * <tt>CBZip2InputStream</tt> reads bytes from the compressed source stream via
- * the single byte {@link InputStream#read() read()} method exclusively.
- * Thus you should consider to use a buffered source stream.
- * </p>
- *
- * <p>
- * This Ant code was enhanced so that it can de-compress blocks of bzip2 data.
- * Current position in the stream is an important statistic for Hadoop. For
- * example in LineRecordReader, we solely depend on the current position in the
- * stream to know about the progress. The notion of position becomes complicated
- * for compressed files. The Hadoop splitting is done in terms of compressed
- * file. But a compressed file deflates to a large amount of data. So we have
- * handled this problem in the following way.
- * <p>
- * On object creation time, we find the next block start delimiter. Once such a
- * marker is found, the stream stops there (we discard any read compressed data
- * in this process) and the position is reported as the beginning of the block
- * start delimiter. At this point we are ready for actual reading
- * (i.e. decompression) of data.
- * <p>
- * The subsequent read calls give out data. The position is updated when the
- * caller of this class has read off the current block + 1 bytes. In between the
- * block reading, position is not updated. (We can only update the position on
- * block boundaries).
+ * The compressed data is read in chunks of {@value BZip2BitReader#BUFFER_SIZE}
+ * bytes, ahead of the decompressed position. Concatenated bzip2 streams are
+ * decompressed one after the other; data following the last stream that is not
+ * another bzip2 stream is ignored.
  * </p>
  *
  * <p>
  * Instances of this class are not thread safe.
  * </p>
  */
-@SuppressWarnings({ "AssignmentToForLoopParameter", "SpellCheckingInspection"})
 class CBZip2InputStream
         extends InputStream
 {
-    // start of block
-    private static final long BLOCK_DELIMITER = 0X314159265359L;
-    private static final int MAX_CODE_LEN = 23;
     /**
-     * End of a BZip2 block
+     * Number of input bits used to index the Huffman lookup tables. Codes of at
+     * most this length are decoded with one table lookup, longer ones fall back
+     * to the canonical bit-by-bit decoder.
      */
-    public static final int END_OF_BLOCK = -2;
-    /**
-     * End of BZip2 stream.
-     */
-    private static final int END_OF_STREAM = -1;
-    private static final int DELIMITER_BIT_LENGTH = 48;
+    static final int FAST_BITS = 10;
 
-    // The variable records the current advertised position of the stream.
-    private long reportedBytesReadFromCompressedStream;
-    // The following variable keep record of compressed bytes read.
-    private long bytesReadFromCompressedStream;
+    /**
+     * The Huffman decoding loop refills its bit buffer when fewer than this many
+     * bits are buffered: at least {@link #FAST_BITS} + 1 so that a lookup table
+     * hit never lacks bits (longer codes take the slow path, which refills on
+     * its own).
+     */
+    private static final int REFILL_THRESHOLD = FAST_BITS + 1;
+
+    private static final int EOF = 0;
+    private static final int START_BLOCK_STATE = 1;
+    private static final int RAND_PART_A_STATE = 2;
+    private static final int RAND_PART_B_STATE = 3;
+    private static final int RAND_PART_C_STATE = 4;
+    private static final int NO_RAND_PART_A_STATE = 5;
+    private static final int NO_RAND_PART_B_STATE = 6;
+    private static final int NO_RAND_PART_C_STATE = 7;
+
+    private final byte[] oneByte = new byte[1];
+    private final Crc32 crc32 = new Crc32();
+
+    private BZip2BitReader bin;
     private boolean initialized;
-
-    private final byte[] array = new byte[1];
 
     /**
      * Index of the last char in the block, so the block size == last + 1.
@@ -115,32 +105,11 @@ class CBZip2InputStream
 
     private boolean blockRandomised;
 
-    private long bsBuff;
-    private long bsLive;
-    private final Crc32 crc32 = new Crc32();
-
-    private int nInUse;
-
-    private BufferedInputStream in;
-
-    private int currentChar = -1;
-
-    /**
-     * A state machine to keep track of current state of the de-coder
-     */
-    public enum STATE
-    {
-        EOF, START_BLOCK_STATE, RAND_PART_A_STATE, RAND_PART_B_STATE, RAND_PART_C_STATE, NO_RAND_PART_A_STATE, NO_RAND_PART_B_STATE, NO_RAND_PART_C_STATE, NO_PROCESS_STATE
-    }
-
-    private STATE currentState = STATE.START_BLOCK_STATE;
+    private int currentState = START_BLOCK_STATE;
 
     private int storedBlockCRC;
     private int storedCombinedCRC;
     private int computedCombinedCRC;
-
-    // used by skipToNextMarker
-    private boolean skipResult;
 
     // Variables used by setup* methods exclusively
 
@@ -152,7 +121,7 @@ class CBZip2InputStream
     private int suRNToGo;
     private int suRTPos;
     private int suTPos;
-    private char suZ;
+    private int suZ;
 
     /**
      * All memory intensive stuff. This field is initialized by initBlock().
@@ -170,175 +139,33 @@ class CBZip2InputStream
      * constructor will throw an exception.
      * </p>
      *
-     * @throws IOException if the stream content is malformed or an I/O error occurs.
      * @throws NullPointerException if <tt>in == null</tt>
      */
-    public CBZip2InputStream(final InputStream in)
+    public CBZip2InputStream(InputStream in)
     {
-        int blockSize = 0X39; // i.e 9
-        this.blockSize100k = blockSize - (int) '0';
-        this.in = new BufferedInputStream(in, 1024 * 9); // >1 MB buffer
+        this.bin = new BZip2BitReader(in);
     }
 
     /**
-     * This method reports the processed bytes so far. Please note that this
-     * statistic is only updated on block boundaries and only when the stream is
-     * initiated in BYBLOCK mode.
+     * Number of bytes of the compressed stream consumed so far.
      */
     public long getProcessedByteCount()
     {
-        return reportedBytesReadFromCompressedStream;
-    }
-
-    /**
-     * This method keeps track of raw processed compressed
-     * bytes.
-     *
-     * @param count count is the number of bytes to be
-     * added to raw processed bytes
-     */
-    private void updateProcessedByteCount(int count)
-    {
-        this.bytesReadFromCompressedStream += count;
-    }
-
-    /**
-     * This method reads a Byte from the compressed stream. Whenever we need to
-     * read from the underlying compressed stream, this method should be called
-     * instead of directly calling the read method of the underlying compressed
-     * stream. This method does important record keeping to have the statistic
-     * that how many bytes have been read off the compressed stream.
-     */
-    private int readAByte(InputStream inStream)
-            throws IOException
-    {
-        int read = inStream.read();
-        if (read >= 0) {
-            this.updateProcessedByteCount(1);
-        }
-        return read;
-    }
-
-    /**
-     * This method tries to find the marker (passed to it as the first parameter)
-     * in the stream.  It can find bit patterns of length <= 63 bits.  Specifically
-     * this method is used in CBZip2InputStream to find the end of block (EOB)
-     * delimiter in the stream, starting from the current position of the stream.
-     * If marker is found, the stream position will be at the byte containing
-     * the starting bit of the marker.
-     *
-     * @param marker The bit pattern to be found in the stream
-     * @param markerBitLength No of bits in the marker
-     * @return true if the marker was found otherwise false
-     * @throws IllegalArgumentException if marketBitLength is greater than 63
-     */
-    private boolean skipToNextMarker(long marker, int markerBitLength)
-            throws IllegalArgumentException
-    {
-        try {
-            if (markerBitLength > 63) {
-                throw new IllegalArgumentException(
-                        "skipToNextMarker can not find patterns greater than 63 bits");
-            }
-            // pick next marketBitLength bits in the stream
-            long bytes;
-            bytes = this.bsR(markerBitLength);
-            if (bytes == -1) {
-                this.reportedBytesReadFromCompressedStream =
-                        this.bytesReadFromCompressedStream;
-                return false;
-            }
-            while (true) {
-                if (bytes == marker) {
-                    // Report the byte position where the marker starts
-                    long markerBytesRead = (markerBitLength + this.bsLive + 7) / 8;
-                    this.reportedBytesReadFromCompressedStream =
-                            this.bytesReadFromCompressedStream - markerBytesRead;
-                    return true;
-                }
-                else {
-                    bytes = bytes << 1;
-                    bytes = bytes & ((1L << markerBitLength) - 1);
-                    int oneBit = (int) this.bsR(1);
-                    if (oneBit != -1) {
-                        bytes = bytes | oneBit;
-                    }
-                    else {
-                        this.reportedBytesReadFromCompressedStream =
-                                this.bytesReadFromCompressedStream;
-                        return false;
-                    }
-                }
-            }
-        }
-        catch (IOException ex) {
-            this.reportedBytesReadFromCompressedStream =
-                    this.bytesReadFromCompressedStream;
-            return false;
-        }
-    }
-
-    private void makeMaps()
-    {
-        final boolean[] inUse = this.data.inUse;
-        final byte[] seqToUnseq = this.data.seqToUnseq;
-
-        int nInUseShadow = 0;
-
-        for (int i = 0; i < 256; i++) {
-            if (inUse[i]) {
-                seqToUnseq[nInUseShadow++] = (byte) i;
-            }
-        }
-
-        this.nInUse = nInUseShadow;
-    }
-
-    private void changeStateToProcessABlock()
-            throws IOException
-    {
-        if (skipResult) {
-            initBlock();
-            setupBlock();
-        }
-        else {
-            this.currentState = STATE.EOF;
-        }
+        return bin == null ? 0 : bin.getBytesRead();
     }
 
     @Override
     public int read()
             throws IOException
     {
-        if (this.in != null) {
-            int result = this.read(array, 0, 1);
-            int value = 0XFF & array[0];
-            return (result > 0 ? value : result);
-        }
-        else {
+        if (bin == null) {
             throw new IOException("stream closed");
         }
+        return read(oneByte, 0, 1) < 0 ? -1 : (oneByte[0] & 0xff);
     }
 
-    /**
-     * In CONTINOUS reading mode, this read method starts from the
-     * start of the compressed stream and end at the end of file by
-     * emitting un-compressed data.  In this mode stream positioning
-     * is not announced and should be ignored.
-     * <p>
-     * In BYBLOCK reading mode, this read method informs about the end
-     * of a BZip2 block by returning EOB.  At this event, the compressed
-     * stream position is also announced.  This announcement tells that
-     * how much of the compressed stream has been de-compressed and read
-     * out of this class.  In between EOB events, the stream position is
-     * not updated.
-     *
-     * @return int The return value greater than 0 are the bytes read.  A value
-     * of -1 means end of stream while -2 represents end of block
-     * @throws IOException if the stream content is malformed or an I/O error occurs.
-     */
     @Override
-    public int read(final byte[] dest, final int offs, final int len)
+    public int read(byte[] dest, int offs, int len)
             throws IOException
     {
         if (offs < 0) {
@@ -351,129 +178,212 @@ class CBZip2InputStream
             throw new IndexOutOfBoundsException("offs(" + offs + ") + len("
                     + len + ") > dest.length(" + dest.length + ").");
         }
-        if (this.in == null) {
+        if (bin == null) {
             throw new IOException("stream closed");
+        }
+        if (len == 0) {
+            return 0;
         }
 
         if (!initialized) {
-            this.init();
-            this.initialized = true;
+            initialized = true;
+            init(true);
+            initBlock();
         }
 
-        final int hi = offs + len;
-        int destOffs = offs;
-        int b = 0;
-
-        while (((destOffs < hi) && ((b = read0())) >= 0)) {
-            dest[destOffs++] = (byte) b;
+        int n = 0;
+        while (n < len) {
+            int state = currentState;
+            if (state == NO_RAND_PART_B_STATE || state == NO_RAND_PART_C_STATE) {
+                // Steady state of a non-randomised block: bulk path.
+                n = readNoRand(dest, offs, len, n);
+                if (currentState == NO_RAND_PART_A_STATE) {
+                    // Block exhausted while more output was wanted (same sequence as setupNoRandPartA()).
+                    endBlock();
+                    initBlock();
+                }
+            }
+            else {
+                // Block boundaries, randomised blocks and EOF go through the byte-at-a-time state machine.
+                int b = read0();
+                if (b < 0) {
+                    break;
+                }
+                dest[offs + n++] = (byte) b;
+            }
         }
+        return n == 0 ? -1 : n;
+    }
 
-        int result = destOffs - offs;
-        if (result == 0) {
-            //report 'end of block' or 'end of stream'
-            result = b;
-
-            skipResult = this.skipToNextMarker(BLOCK_DELIMITER, DELIMITER_BIT_LENGTH);
-
-            changeStateToProcessABlock();
+    /**
+     * Inverse BWT traversal and RLE1 expansion of a non-randomised block into
+     * {@code dest}: the {@link #setupNoRandPartA()}/{@link #setupNoRandPartB()}/
+     * {@link #setupNoRandPartC()} state machine with its state in locals, reading
+     * the block from {@code data.raw} and computing the CRC over the output slice.
+     *
+     * @return the new count of bytes written into {@code dest}. Leaves
+     * {@link #currentState} at {@link #NO_RAND_PART_A_STATE} if the block was
+     * exhausted before {@code len} bytes were produced.
+     */
+    private int readNoRand(byte[] dest, int offs, int len, int n)
+    {
+        byte[] raw = data.raw;
+        int lastShadow = this.last;
+        int i2 = suI2;
+        int count = suCount;
+        int ch2 = suCh2;
+        int chPrev = suChPrev;
+        int z = suZ;
+        int j2 = suJ2;
+        int state = currentState;
+        int start = offs + n;
+        int end = offs + len;
+        int o = start;
+        while (o < end) {
+            if (state == NO_RAND_PART_C_STATE) {
+                if (j2 < z) {
+                    int k = Math.min(z - j2, end - o);
+                    byte b = (byte) ch2;
+                    for (int i = 0; i < k; i++) {
+                        dest[o + i] = b;
+                    }
+                    o += k;
+                    j2 += k;
+                    continue;
+                }
+                i2++;
+                count = 0;
+            }
+            else if (ch2 != chPrev) {
+                count = 1;
+            }
+            else if (++count >= 4) {
+                // Repeat count; i2 may be last + 1 here, raw[last + 1] holds the byte the cycle continues with.
+                z = raw[i2] & 0xff;
+                j2 = 0;
+                state = NO_RAND_PART_C_STATE;
+                continue;
+            }
+            // setupNoRandPartA()
+            if (i2 > lastShadow) {
+                state = NO_RAND_PART_A_STATE;
+                break;
+            }
+            chPrev = ch2;
+            ch2 = raw[i2++] & 0xff;
+            dest[o++] = (byte) ch2;
+            state = NO_RAND_PART_B_STATE;
         }
-        return result;
+        suI2 = i2;
+        suCount = count;
+        suCh2 = ch2;
+        suChPrev = chPrev;
+        suZ = z;
+        suJ2 = j2;
+        currentState = state;
+        crc32.updateCRC(dest, start, o - start);
+        return o - offs;
     }
 
     private int read0()
             throws IOException
     {
-        final int retChar = this.currentChar;
-
-        switch (this.currentState) {
-            case EOF -> {
-                return END_OF_STREAM; // return -1
-            }
-
-            case NO_PROCESS_STATE -> {
-                return END_OF_BLOCK; // return -2
-            }
-
-            case START_BLOCK_STATE -> throw new IllegalStateException();
-
-            case RAND_PART_A_STATE -> throw new IllegalStateException();
-
+        return switch (currentState) {
+            case EOF -> -1;
+            case START_BLOCK_STATE -> setupBlock();
             case RAND_PART_B_STATE -> setupRandPartB();
-
             case RAND_PART_C_STATE -> setupRandPartC();
-
-            case NO_RAND_PART_A_STATE -> throw new IllegalStateException();
-
             case NO_RAND_PART_B_STATE -> setupNoRandPartB();
-
             case NO_RAND_PART_C_STATE -> setupNoRandPartC();
-
-            default -> throw new IllegalStateException();
-        }
-
-        return retChar;
+            default -> throw new IllegalStateException("unexpected state " + currentState);
+        };
     }
 
-    private void init()
+    /**
+     * Reads a stream header.
+     *
+     * @param firstStream whether this is the first stream, whose <tt>"BZ"</tt>
+     * magic has been consumed by the caller
+     * @return false if there is no further stream
+     */
+    private boolean init(boolean firstStream)
             throws IOException
     {
-        int magic2 = this.readAByte(in);
-        if (magic2 != 'h') {
-            throw new IOException("Stream is not BZip2 formatted: expected 'h'"
-                    + " as first byte but got '" + (char) magic2 + "'");
+        if (firstStream) {
+            int magic2 = bin.readByteOrEof();
+            if (magic2 != 'h') {
+                throw new IOException("Stream is not BZip2 formatted: expected 'h'"
+                        + " as first byte but got '" + (char) magic2 + "'");
+            }
+        }
+        else {
+            // Continue with a concatenated stream if one follows; anything else ends the data.
+            bin.alignToByte();
+            int magic0 = bin.readByteOrEof();
+            if (magic0 != 'B' || bin.readByteOrEof() != 'Z' || bin.readByteOrEof() != 'h') {
+                return false;
+            }
         }
 
-        int blockSize = this.readAByte(in);
+        int blockSize = bin.readByteOrEof();
         if ((blockSize < '1') || (blockSize > '9')) {
+            if (!firstStream) {
+                return false;
+            }
             throw new IOException("Stream is not BZip2 formatted: illegal "
                     + "blocksize " + (char) blockSize);
         }
 
-        this.blockSize100k = blockSize - (int) '0';
-
-        initBlock();
-        setupBlock();
+        this.blockSize100k = blockSize - '0';
+        this.computedCombinedCRC = 0;
+        return true;
     }
 
     private void initBlock()
             throws IOException
     {
-        char magic0 = bsGetUByte();
-        char magic1 = bsGetUByte();
-        char magic2 = bsGetUByte();
-        char magic3 = bsGetUByte();
-        char magic4 = bsGetUByte();
-        char magic5 = bsGetUByte();
+        while (true) {
+            int magic0 = bin.readBits(8);
+            int magic1 = bin.readBits(8);
+            int magic2 = bin.readBits(8);
+            int magic3 = bin.readBits(8);
+            int magic4 = bin.readBits(8);
+            int magic5 = bin.readBits(8);
 
-        if (magic0 == 0x17 && magic1 == 0x72 && magic2 == 0x45
-                && magic3 == 0x38 && magic4 == 0x50 && magic5 == 0x90) {
-            complete(); // end of file
-        }
-        else if (magic0 != 0x31 || // '1'
-                magic1 != 0x41 || // ')'
-                magic2 != 0x59 || // 'Y'
-                magic3 != 0x26 || // '&'
-                magic4 != 0x53 || // 'S'
-                magic5 != 0x59 /* 'Y' */) {
-            this.currentState = STATE.EOF;
-            throw new IOException("bad block header");
-        }
-        else {
-            this.storedBlockCRC = bsGetInt();
-            this.blockRandomised = bsR(1) == 1;
-
-            // Allocate data here instead in constructor, so we do not allocate
-            // it if the input file is empty.
-            if (this.data == null) {
-                this.data = new Data(this.blockSize100k);
+            if (magic0 == 0x17 && magic1 == 0x72 && magic2 == 0x45
+                    && magic3 == 0x38 && magic4 == 0x50 && magic5 == 0x90) {
+                // End of stream: check the combined CRC and advance to the next stream, if any.
+                if (complete()) {
+                    return;
+                }
+                continue;
             }
 
-            // currBlockNo++;
-            getAndMoveToFrontDecode();
-
-            this.crc32.initialiseCRC();
-            this.currentState = STATE.START_BLOCK_STATE;
+            if (magic0 != 0x31 || // '1'
+                    magic1 != 0x41 || // ')'
+                    magic2 != 0x59 || // 'Y'
+                    magic3 != 0x26 || // '&'
+                    magic4 != 0x53 || // 'S'
+                    magic5 != 0x59 /* 'Y' */) {
+                this.currentState = EOF;
+                throw new IOException("bad block header");
+            }
+            break;
         }
+
+        this.storedBlockCRC = bin.readBits(32);
+        this.blockRandomised = bin.readBits(1) == 1;
+
+        // Allocate data here instead in constructor, so we do not allocate
+        // it if the input file is empty.
+        if (this.data == null) {
+            this.data = new Data(this.blockSize100k);
+        }
+
+        getAndMoveToFrontDecode();
+
+        this.crc32.initialiseCRC();
+        this.currentState = START_BLOCK_STATE;
     }
 
     private void endBlock()
@@ -497,185 +407,197 @@ class CBZip2InputStream
         this.computedCombinedCRC ^= computedBlockCRC;
     }
 
-    private void complete()
+    /**
+     * Finishes a stream.
+     *
+     * @return true if there is no further stream
+     */
+    private boolean complete()
             throws IOException
     {
-        this.storedCombinedCRC = bsGetInt();
-        this.currentState = STATE.EOF;
+        this.storedCombinedCRC = bin.readBits(32);
+        this.currentState = EOF;
         this.data = null;
 
         if (this.storedCombinedCRC != this.computedCombinedCRC) {
             throw new IOException("crc error");
         }
+        return !init(false);
     }
 
     @Override
     public void close()
             throws IOException
     {
-        InputStream inShadow = this.in;
-        if (inShadow != null) {
+        BZip2BitReader binShadow = this.bin;
+        if (binShadow != null) {
             try {
-                if (inShadow != System.in) {
-                    inShadow.close();
-                }
+                binShadow.close();
             }
             finally {
                 this.data = null;
-                this.in = null;
+                this.bin = null;
             }
         }
     }
 
-    private long bsR(final long n)
+    private static void checkBounds(int checkVal, int limitExclusive, String name)
             throws IOException
     {
-        long bsLiveShadow = this.bsLive;
-        long bsBuffShadow = this.bsBuff;
-
-        if (bsLiveShadow < n) {
-            final InputStream inShadow = this.in;
-            do {
-                int thech = readAByte(inShadow);
-
-                if (thech < 0) {
-                    throw new IOException("unexpected end of stream");
-                }
-
-                bsBuffShadow = (bsBuffShadow << 8) | thech;
-                bsLiveShadow += 8;
-            } while (bsLiveShadow < n);
-
-            this.bsBuff = bsBuffShadow;
+        if (checkVal < 0) {
+            throw new IOException("stream corrupted: '" + name + "' value negative");
         }
-
-        this.bsLive = bsLiveShadow - n;
-        return (bsBuffShadow >> (bsLiveShadow - n)) & ((1L << n) - 1);
-    }
-
-    private boolean bsGetBit()
-            throws IOException
-    {
-        long bsLiveShadow = this.bsLive;
-        long bsBuffShadow = this.bsBuff;
-
-        if (bsLiveShadow < 1) {
-            int thech = this.readAByte(in);
-
-            if (thech < 0) {
-                throw new IOException("unexpected end of stream");
-            }
-
-            bsBuffShadow = (bsBuffShadow << 8) | thech;
-            bsLiveShadow += 8;
-            this.bsBuff = bsBuffShadow;
+        if (checkVal >= limitExclusive) {
+            throw new IOException("stream corrupted: '" + name + "' value too big");
         }
-
-        this.bsLive = bsLiveShadow - 1;
-        return ((bsBuffShadow >> (bsLiveShadow - 1)) & 1) != 0;
-    }
-
-    private char bsGetUByte()
-            throws IOException
-    {
-        return (char) bsR(8);
-    }
-
-    private int bsGetInt()
-            throws IOException
-    {
-        return (int) ((((((bsR(8) << 8) | bsR(8)) << 8) | bsR(8)) << 8) | bsR(8));
     }
 
     /**
-     * Called by createHuffmanDecodingTables() exclusively.
+     * Builds the decoding tables of one Huffman group from
+     * {@code data.codeLengths[0..alphaSize)}: code lengths must be in
+     * {@code [1, MAX_CODE_LEN]} and must not over-subscribe the code space
+     * (Kraft's inequality). Incomplete codes are accepted.
      */
-    private static void hbCreateDecodeTables(final int[] limit,
-            final int[] base, final int[] perm, final char[] length,
-            final int minLen, final int maxLen, final int alphaSize)
+    private static void buildHuffmanTables(Data data, int group, int alphaSize)
+            throws IOException
     {
-        for (int i = minLen, pp = 0; i <= maxLen; i++) {
-            for (int j = 0; j < alphaSize; j++) {
-                if (length[j] == i) {
-                    perm[pp++] = j;
-                }
+        int[] codeLengths = data.codeLengths;
+        // 1) Validate and find min/max lengths, in symbol order.
+        int min = MAX_CODE_LEN;
+        int max = 0;
+        for (int i = 0; i < alphaSize; i++) {
+            int len = codeLengths[i];
+            if (len < 1 || len > MAX_CODE_LEN) {
+                throw new IOException("stream corrupted: invalid code length at symbol " + i + ": " + len);
+            }
+            if (len < min) {
+                min = len;
+            }
+            if (len > max) {
+                max = len;
             }
         }
-
-        for (int i = MAX_CODE_LEN; --i > 0; ) {
-            base[i] = 0;
-            limit[i] = 0;
+        if (max == 0) {
+            throw new IOException("stream corrupted: all code lengths are zero");
         }
-
+        // 2) Histogram of code lengths and Kraft's inequality.
+        int[] count = data.lengthCount;
+        Arrays.fill(count, 0);
         for (int i = 0; i < alphaSize; i++) {
-            base[(int) length[i] + 1]++;
+            count[codeLengths[i]]++;
         }
-
-        for (int i = 1, b = base[0]; i < MAX_CODE_LEN; i++) {
-            b += base[i];
-            base[i] = b;
+        int availableNodes = 1;
+        for (int len = 1; len <= max; len++) {
+            availableNodes <<= 1;
+            if (count[len] > availableNodes) {
+                throw new IOException("stream corrupted: too many codes of length " + len);
+            }
+            availableNodes -= count[len];
         }
-
-        for (int i = minLen, vec = 0, b = base[i]; i <= maxLen; i++) {
-            final int nb = base[i + 1];
-            vec += nb - b;
-            b = nb;
-            limit[i] = vec - 1;
-            vec <<= 1;
+        // 3) Symbols sorted by (length, symbol); offset[len] ends up pointing at the last symbol of each length.
+        int[] offset = data.lengthOffset;
+        offset[0] = -1;
+        for (int len = 1; len <= max; len++) {
+            offset[len] = offset[len - 1] + count[len - 1];
         }
-
-        for (int i = minLen + 1; i <= maxLen; i++) {
-            base[i] = ((limit[i - 1] + 1) << 1) - base[i];
+        int[] perm = data.perm[group];
+        for (int i = 0; i < alphaSize; i++) {
+            perm[++offset[codeLengths[i]]] = i;
+        }
+        // 4) Largest code of each length and the bias between codes and indices into perm.
+        int[] limit = data.limit[group];
+        int[] bias = data.bias[group];
+        int firstCode = 0;
+        for (int len = min; len <= max; len++) {
+            firstCode += count[len];
+            limit[len] = firstCode - 1;
+            bias[len] = limit[len] - offset[len];
+            firstCode <<= 1;
+        }
+        data.minLens[group] = min;
+        data.maxLens[group] = max;
+        // 5) Lookup table for codes of at most FAST_BITS bits: canonical codes are consecutive within a
+        // length, in symbol order.
+        int[] fast = data.fastTable;
+        int base = group << FAST_BITS;
+        Arrays.fill(fast, base, base + (1 << FAST_BITS), 0);
+        int code = 0;
+        int symbolIndex = 0;
+        for (int len = 1; len <= max && len <= FAST_BITS; len++) {
+            int n = count[len];
+            for (int k = 0; k < n; k++, code++) {
+                int entry = (perm[symbolIndex++] << 8) | len;
+                int from = base + (code << (FAST_BITS - len));
+                Arrays.fill(fast, from, from + (1 << (FAST_BITS - len)), entry);
+            }
+            code <<= 1;
         }
     }
 
-    private void recvDecodingTables()
+    private static void makeMaps(Data data)
+    {
+        boolean[] inUse = data.inUse;
+        byte[] seqToUnseq = data.seqToUnseq;
+
+        int nInUseShadow = 0;
+
+        for (int i = 0; i < 256; i++) {
+            if (inUse[i]) {
+                seqToUnseq[nInUseShadow++] = (byte) i;
+            }
+        }
+
+        data.inUseCount = nInUseShadow;
+    }
+
+    private static void recvDecodingTables(BZip2BitReader bin, Data dataShadow)
             throws IOException
     {
-        final Data dataShadow = this.data;
-        final boolean[] inUse = dataShadow.inUse;
-        final byte[] pos = dataShadow.recvDecodingTablesPos;
-        final byte[] selector = dataShadow.selector;
-        final byte[] selectorMtf = dataShadow.selectorMtf;
+        boolean[] inUse = dataShadow.inUse;
+        byte[] pos = dataShadow.recvDecodingTablesPos;
+        byte[] selector = dataShadow.selector;
+        byte[] selectorMtf = dataShadow.selectorMtf;
 
         int inUse16 = 0;
 
         /* Receive the mapping table */
         for (int i = 0; i < 16; i++) {
-            if (bsGetBit()) {
+            if (bin.readBits(1) != 0) {
                 inUse16 |= 1 << i;
             }
         }
 
-        for (int i = 256; --i >= 0; ) {
-            inUse[i] = false;
-        }
-
+        Arrays.fill(inUse, false);
         for (int i = 0; i < 16; i++) {
             if ((inUse16 & (1 << i)) != 0) {
-                final int i16 = i << 4;
+                int i16 = i << 4;
                 for (int j = 0; j < 16; j++) {
-                    if (bsGetBit()) {
+                    if (bin.readBits(1) != 0) {
                         inUse[i16 + j] = true;
                     }
                 }
             }
         }
 
-        makeMaps();
-        final int alphaSize = this.nInUse + 2;
+        makeMaps(dataShadow);
+        int alphaSize = dataShadow.inUseCount + 2;
 
         /* Now the selectors */
-        final int nGroups = (int) bsR(3);
-        final int nSelectors = (int) bsR(15);
+        int nGroups = bin.readBits(3);
+        int selectors = bin.readBits(15);
+        checkBounds(alphaSize, MAX_ALPHA_SIZE + 1, "alphaSize");
+        checkBounds(nGroups, N_GROUPS + 1, "nGroups");
 
-        for (int i = 0; i < nSelectors; i++) {
-            int j = 0;
-            while (bsGetBit()) {
-                j++;
+        // Don't fail on nSelectors overflowing boundaries but discard the values in overflow
+        // See https://gnu.wildebeest.org/blog/mjw/2019/08/02/bzip2-and-the-cve-that-wasnt/
+        // and https://sourceware.org/ml/bzip2-devel/2019-q3/msg00007.html
+        for (int i = 0; i < selectors; i++) {
+            int j = bin.readUnary();
+            if (i < MAX_SELECTORS) {
+                selectorMtf[i] = (byte) j;
             }
-            selectorMtf[i] = (byte) j;
         }
+        int nSelectors = Math.min(selectors, MAX_SELECTORS);
 
         /* Undo the MTF values for the selectors. */
         for (int v = nGroups; --v >= 0; ) {
@@ -684,7 +606,8 @@ class CBZip2InputStream
 
         for (int i = 0; i < nSelectors; i++) {
             int v = selectorMtf[i] & 0xff;
-            final byte tmp = pos[v];
+            checkBounds(v, N_GROUPS, "selectorMtf");
+            byte tmp = pos[v];
             while (v > 0) {
                 // nearly all times v is zero, 4 in most other cases
                 pos[v] = pos[v - 1];
@@ -694,74 +617,62 @@ class CBZip2InputStream
             selector[i] = tmp;
         }
 
-        final char[][] len = dataShadow.tempCharArray2D;
-
-        /* Now the coding tables */
+        /* Now the Huffman coding tables */
+        int[] codeLengths = dataShadow.codeLengths;
         for (int t = 0; t < nGroups; t++) {
-            int curr = (int) bsR(5);
-            final char[] lenT = len[t];
+            int curr = bin.readBits(5);
             for (int i = 0; i < alphaSize; i++) {
-                while (bsGetBit()) {
-                    curr += bsGetBit() ? -1 : 1;
+                while (bin.readBits(1) != 0) {
+                    curr += bin.readBits(1) != 0 ? -1 : 1;
                 }
-                lenT[i] = (char) curr;
+                codeLengths[i] = curr;
             }
+            buildHuffmanTables(dataShadow, t, alphaSize);
         }
-
-        // finally create the Huffman tables
-        createHuffmanDecodingTables(alphaSize, nGroups);
+        dataShadow.nGroups = nGroups;
     }
 
     /**
-     * Called by recvDecodingTables() exclusively.
+     * Decodes one symbol bit by bit (canonical Huffman decoding): used for codes
+     * longer than {@link #FAST_BITS} bits, for prefixes no code claims (the
+     * stream is then corrupt) and near the end of the input. The bit buffer
+     * state must have been written back to {@code bin} by the caller.
      */
-    private void createHuffmanDecodingTables(final int alphaSize,
-            final int nGroups)
+    private int decodeSymbolSlow(int group)
+            throws IOException
     {
-        final Data dataShadow = this.data;
-        final char[][] len = dataShadow.tempCharArray2D;
-        final int[] minLens = dataShadow.minLens;
-        final int[][] limit = dataShadow.limit;
-        final int[][] base = dataShadow.base;
-        final int[][] perm = dataShadow.perm;
-
-        for (int t = 0; t < nGroups; t++) {
-            int minLen = 32;
-            int maxLen = 0;
-            final char[] lenT = len[t];
-            for (int i = alphaSize; --i >= 0; ) {
-                final char lent = lenT[i];
-                if (lent > maxLen) {
-                    maxLen = lent;
-                }
-                if (lent < minLen) {
-                    minLen = lent;
-                }
-            }
-            hbCreateDecodeTables(limit[t], base[t], perm[t], len[t], minLen,
-                    maxLen, alphaSize);
-            minLens[t] = minLen;
+        BZip2BitReader bin = this.bin;
+        Data dataShadow = this.data;
+        int[] limit = dataShadow.limit[group];
+        int maxLen = dataShadow.maxLens[group];
+        int len = dataShadow.minLens[group];
+        int code = bin.readBits(len);
+        while (len <= maxLen && code > limit[len]) {
+            code = (code << 1) | bin.readBits(1);
+            len++;
         }
+        if (len > maxLen) {
+            throw new IOException("stream corrupted: invalid Huffman code " + code);
+        }
+        return dataShadow.perm[group][code - dataShadow.bias[group][len]];
     }
 
     private void getAndMoveToFrontDecode()
             throws IOException
     {
-        this.origPtr = (int) bsR(24);
-        recvDecodingTables();
+        BZip2BitReader bin = this.bin;
+        this.origPtr = bin.readBits(24);
+        Data dataShadow = this.data;
+        recvDecodingTables(bin, dataShadow);
 
-        final InputStream inShadow = this.in;
-        final Data dataShadow = this.data;
-        final byte[] ll8 = dataShadow.ll8;
-        final int[] unzftab = dataShadow.unzftab;
-        final byte[] selector = dataShadow.selector;
-        final byte[] seqToUnseq = dataShadow.seqToUnseq;
-        final char[] yy = dataShadow.getAndMoveToFrontDecodeYy;
-        final int[] minLens = dataShadow.minLens;
-        final int[][] limit = dataShadow.limit;
-        final int[][] base = dataShadow.base;
-        final int[][] perm = dataShadow.perm;
-        final int limitLast = this.blockSize100k * 100000;
+        int[] tt = dataShadow.tt;
+        int[] unzftab = dataShadow.unzftab;
+        byte[] selector = dataShadow.selector;
+        byte[] seqToUnseq = dataShadow.seqToUnseq;
+        int[] yy = dataShadow.yy;
+        int[] fast = dataShadow.fastTable;
+        int nGroups = dataShadow.nGroups;
+        int limitLast = this.blockSize100k * BASE_BLOCK_SIZE;
 
         /*
          * Setting up the unzftab entries here is not strictly necessary, but it
@@ -769,103 +680,122 @@ class CBZip2InputStream
          * block's worth of cache misses.
          */
         for (int i = 256; --i >= 0; ) {
-            yy[i] = (char) i;
+            yy[i] = i;
             unzftab[i] = 0;
         }
 
-        int groupNo = 0;
         int groupPos = G_SIZE - 1;
-        final int eob = this.nInUse + 1;
-        int nextSym = getAndMoveToFrontDecode0(0);
-        int bsBuffShadow = (int) this.bsBuff;
-        int bsLiveShadow = (int) this.bsLive;
+        int eob = dataShadow.inUseCount + 1;
         int lastShadow = -1;
+        int groupNo = 0;
         int zt = selector[groupNo] & 0xff;
-        int[] baseZt = base[zt];
-        int[] limitZt = limit[zt];
-        int[] permZt = perm[zt];
-        int minLensZt = minLens[zt];
+        checkBounds(zt, nGroups, "zt");
+        int fastBase = zt << FAST_BITS;
+        // RUNA/RUNB accumulation state
+        boolean inRun = false;
+        int runLength = -1;
+        int runWeight = 1;
+        boolean first = true;
+        long bitBuffer = bin.bitBuffer;
+        int bitCount = bin.bitCount;
+        // The locals hold the reader state except while the reader itself is working (refill, slow
+        // path); on an exception thrown by the reader the locals are stale and must not be written back.
+        boolean localsAhead = true;
+        try {
+            while (true) {
+                // Every symbol but the first is preceded by the group bookkeeping.
+                if (first) {
+                    first = false;
+                }
+                else if (groupPos == 0) {
+                    groupPos = G_SIZE - 1;
+                    checkBounds(++groupNo, selector.length, "groupNo");
+                    zt = selector[groupNo] & 0xff;
+                    checkBounds(zt, nGroups, "zt");
+                    fastBase = zt << FAST_BITS;
+                }
+                else {
+                    groupPos--;
+                }
 
-        while (nextSym != eob) {
-            if ((nextSym == RUN_A) || (nextSym == RUN_B)) {
-                int s = -1;
+                // Decode one symbol.
+                if (bitCount < REFILL_THRESHOLD) {
+                    bin.bitBuffer = bitBuffer;
+                    bin.bitCount = bitCount;
+                    localsAhead = false;
+                    bin.fill();
+                    bitBuffer = bin.bitBuffer;
+                    bitCount = bin.bitCount;
+                    localsAhead = true;
+                }
+                int nextSym;
+                int entry = fast[fastBase + (int) (bitBuffer >>> (64 - FAST_BITS))];
+                int codeLen = entry & 0xff;
+                if (entry != 0 && codeLen <= bitCount) {
+                    nextSym = entry >>> 8;
+                    bitBuffer <<= codeLen;
+                    bitCount -= codeLen;
+                }
+                else {
+                    bin.bitBuffer = bitBuffer;
+                    bin.bitCount = bitCount;
+                    localsAhead = false;
+                    nextSym = decodeSymbolSlow(zt);
+                    bitBuffer = bin.bitBuffer;
+                    bitCount = bin.bitCount;
+                    localsAhead = true;
+                }
 
-                for (int n = 1; true; n <<= 1) {
-                    if (nextSym == RUN_A) {
-                        s += n;
+                if (nextSym <= RUN_B) {
+                    // RUN_A (0) adds the weight, RUN_B (1) twice the weight.
+                    if (!inRun) {
+                        inRun = true;
+                        runLength = -1;
+                        runWeight = 1;
                     }
-                    else if (nextSym == RUN_B) {
-                        s += n << 1;
+                    runLength += runWeight << nextSym;
+                    runWeight <<= 1;
+                    continue;
+                }
+
+                if (inRun) {
+                    inRun = false;
+                    checkBounds(runLength, tt.length, "s");
+                    // yy is a permutation of 0..inUseCount-1 at positions below inUseCount, so yy[0] always
+                    // indexes seqToUnseq.
+                    int ch = seqToUnseq[yy[0]] & 0xff;
+                    unzftab[ch] += runLength + 1;
+                    int from = ++lastShadow;
+                    lastShadow += runLength;
+                    checkBounds(lastShadow, tt.length, "lastShadow");
+                    if (runLength < 32) {
+                        // Most runs are short; avoid the call overhead of Arrays.fill.
+                        for (int i = from; i <= lastShadow; i++) {
+                            tt[i] = ch;
+                        }
                     }
                     else {
-                        break;
+                        Arrays.fill(tt, from, lastShadow + 1, ch);
                     }
-
-                    if (groupPos == 0) {
-                        groupPos = G_SIZE - 1;
-                        zt = selector[++groupNo] & 0xff;
-                        baseZt = base[zt];
-                        limitZt = limit[zt];
-                        permZt = perm[zt];
-                        minLensZt = minLens[zt];
+                    if (lastShadow >= limitLast) {
+                        throw new IOException("block overrun");
                     }
-                    else {
-                        groupPos--;
-                    }
-
-                    int zn = minLensZt;
-
-                    while (bsLiveShadow < zn) {
-                        final int thech = readAByte(inShadow);
-                        if (thech >= 0) {
-                            bsBuffShadow = (bsBuffShadow << 8) | thech;
-                            bsLiveShadow += 8;
-                        }
-                        else {
-                            throw new IOException("unexpected end of stream");
-                        }
-                    }
-                    long zvec = (bsBuffShadow >> (bsLiveShadow - zn)) & ((1L << zn) - 1);
-                    bsLiveShadow -= zn;
-
-                    while (zvec > limitZt[zn]) {
-                        zn++;
-                        while (bsLiveShadow < 1) {
-                            final int thech = readAByte(inShadow);
-                            if (thech >= 0) {
-                                bsBuffShadow = (bsBuffShadow << 8) | thech;
-                                bsLiveShadow += 8;
-                            }
-                            else {
-                                throw new IOException("unexpected end of stream");
-                            }
-                        }
-                        bsLiveShadow--;
-                        zvec = (zvec << 1)
-                                | ((bsBuffShadow >> bsLiveShadow) & 1);
-                    }
-                    nextSym = permZt[(int) (zvec - baseZt[zn])];
                 }
 
-                final byte ch = seqToUnseq[yy[0]];
-                unzftab[ch & 0xff] += s + 1;
-
-                while (s-- >= 0) {
-                    ll8[++lastShadow] = ch;
+                if (nextSym == eob) {
+                    break;
                 }
 
-                if (lastShadow >= limitLast) {
-                    throw new IOException("block overrun");
-                }
-            }
-            else {
                 if (++lastShadow >= limitLast) {
                     throw new IOException("block overrun");
                 }
 
-                final char tmp = yy[nextSym - 1];
-                unzftab[seqToUnseq[tmp] & 0xff]++;
-                ll8[lastShadow] = seqToUnseq[tmp];
+                // nextSym < alphaSize == inUseCount + 2 and nextSym != eob, so nextSym - 1 < inUseCount <=
+                // 256 and yy[nextSym - 1] < inUseCount.
+                int tmp = yy[nextSym - 1];
+                int ch = seqToUnseq[tmp] & 0xff;
+                unzftab[ch]++;
+                tt[lastShadow] = ch;
 
                 /*
                  * This loop is hammered during decompression, hence avoid
@@ -878,109 +808,38 @@ class CBZip2InputStream
                     }
                 }
                 else {
-                    //noinspection SuspiciousSystemArraycopy
                     System.arraycopy(yy, 0, yy, 1, nextSym - 1);
                 }
 
                 yy[0] = tmp;
-
-                if (groupPos == 0) {
-                    groupPos = G_SIZE - 1;
-                    zt = selector[++groupNo] & 0xff;
-                    baseZt = base[zt];
-                    limitZt = limit[zt];
-                    permZt = perm[zt];
-                    minLensZt = minLens[zt];
-                }
-                else {
-                    groupPos--;
-                }
-
-                int zn = minLensZt;
-
-                while (bsLiveShadow < zn) {
-                    final int thech = readAByte(inShadow);
-                    if (thech >= 0) {
-                        bsBuffShadow = (bsBuffShadow << 8) | thech;
-                        bsLiveShadow += 8;
-                    }
-                    else {
-                        throw new IOException("unexpected end of stream");
-                    }
-                }
-                int zvec = (bsBuffShadow >> (bsLiveShadow - zn))
-                        & ((1 << zn) - 1);
-                bsLiveShadow -= zn;
-
-                while (zvec > limitZt[zn]) {
-                    zn++;
-                    while (bsLiveShadow < 1) {
-                        final int thech = readAByte(inShadow);
-                        if (thech >= 0) {
-                            bsBuffShadow = (bsBuffShadow << 8) | thech;
-                            bsLiveShadow += 8;
-                        }
-                        else {
-                            throw new IOException("unexpected end of stream");
-                        }
-                    }
-                    bsLiveShadow--;
-                    zvec = ((zvec << 1) | ((bsBuffShadow >> bsLiveShadow) & 1));
-                }
-                nextSym = permZt[zvec - baseZt[zn]];
+            }
+        }
+        finally {
+            if (localsAhead) {
+                bin.bitBuffer = bitBuffer;
+                bin.bitCount = bitCount;
             }
         }
 
         this.last = lastShadow;
-        this.bsLive = bsLiveShadow;
-        this.bsBuff = bsBuffShadow;
     }
 
-    private int getAndMoveToFrontDecode0(final int groupNo)
+    private int setupBlock()
             throws IOException
     {
-        final InputStream inShadow = this.in;
-        final Data dataShadow = this.data;
-        final int zt = dataShadow.selector[groupNo] & 0xff;
-        final int[] limitZt = dataShadow.limit[zt];
-        int zn = dataShadow.minLens[zt];
-        int zvec = (int) bsR(zn);
-        int bsLiveShadow = (int) this.bsLive;
-        int bsBuffShadow = (int) this.bsBuff;
-
-        while (zvec > limitZt[zn]) {
-            zn++;
-            while (bsLiveShadow < 1) {
-                final int thech = readAByte(inShadow);
-
-                if (thech >= 0) {
-                    bsBuffShadow = (bsBuffShadow << 8) | thech;
-                    bsLiveShadow += 8;
-                }
-                else {
-                    throw new IOException("unexpected end of stream");
-                }
-            }
-            bsLiveShadow--;
-            zvec = (zvec << 1) | ((bsBuffShadow >> bsLiveShadow) & 1);
+        if (currentState == EOF || this.data == null) {
+            return -1;
         }
 
-        this.bsLive = bsLiveShadow;
-        this.bsBuff = bsBuffShadow;
+        int[] cftab = this.data.cftab;
+        int[] tt = this.data.tt;
+        int lastShadow = this.last;
 
-        return dataShadow.perm[zt][zvec - dataShadow.base[zt][zn]];
-    }
-
-    private void setupBlock()
-            throws IOException
-    {
-        if (this.data == null) {
-            return;
+        // Checked before the in-place transform below, which must run exactly once per block.
+        if (this.origPtr < 0 || this.origPtr > lastShadow) {
+            throw new IOException("stream corrupted");
         }
 
-        final int[] cftab = this.data.cftab;
-        final int[] tt = this.data.initTT(this.last + 1);
-        final byte[] ll8 = this.data.ll8;
         cftab[0] = 0;
         System.arraycopy(this.data.unzftab, 0, cftab, 1, 256);
 
@@ -989,37 +848,35 @@ class CBZip2InputStream
             cftab[i] = c;
         }
 
-        for (int i = 0, lastShadow = this.last; i <= lastShadow; i++) {
-            tt[cftab[ll8[i] & 0xff]++] = i;
+        // tt[i] holds byte i of the transformed block in its low 8 bits; link every byte to its
+        // successor in the original data. unzftab counted exactly the bytes written, so
+        // cftab[256] == lastShadow + 1 and every index below is written exactly once.
+        for (int i = 0; i <= lastShadow; i++) {
+            tt[cftab[tt[i] & 0xff]++] |= i << 8;
         }
 
-        if ((this.origPtr < 0) || (this.origPtr >= tt.length)) {
-            throw new IOException("stream corrupted");
-        }
-
-        this.suTPos = tt[this.origPtr];
         this.suCount = 0;
         this.suI2 = 0;
         this.suCh2 = 256; /* not a char and not EOF */
 
         if (this.blockRandomised) {
+            this.suTPos = tt[this.origPtr] >>> 8;
             this.suRNToGo = 0;
             this.suRTPos = 0;
-            setupRandPartA();
+            return setupRandPartA();
         }
-        else {
-            setupNoRandPartA();
-        }
+        this.data.inverseBwt.unwind(tt, this.origPtr, lastShadow + 1, this.data.raw);
+        return setupNoRandPartA();
     }
 
-    @SuppressWarnings("checkstyle:InnerAssignment")
-    private void setupRandPartA()
+    private int setupRandPartA()
             throws IOException
     {
         if (this.suI2 <= this.last) {
             this.suChPrev = this.suCh2;
-            int suCh2Shadow = this.data.ll8[this.suTPos] & 0xff;
-            this.suTPos = this.data.tt[this.suTPos];
+            int v = this.data.tt[this.suTPos];
+            int suCh2Shadow = v & 0xff;
+            this.suTPos = v >>> 8;
             if (this.suRNToGo == 0) {
                 this.suRNToGo = R_NUMS[this.suRTPos] - 1;
                 if (++this.suRTPos == 512) {
@@ -1029,128 +886,118 @@ class CBZip2InputStream
             else {
                 this.suRNToGo--;
             }
-            this.suCh2 = suCh2Shadow ^= (this.suRNToGo == 1) ? 1 : 0;
+            suCh2Shadow ^= (this.suRNToGo == 1) ? 1 : 0;
+            this.suCh2 = suCh2Shadow;
             this.suI2++;
-            this.currentChar = suCh2Shadow;
-            this.currentState = STATE.RAND_PART_B_STATE;
+            this.currentState = RAND_PART_B_STATE;
             this.crc32.updateCRC(suCh2Shadow);
+            return suCh2Shadow;
         }
-        else {
-            endBlock();
-            initBlock();
-            setupBlock();
-        }
+        endBlock();
+        initBlock();
+        return setupBlock();
     }
 
-    private void setupNoRandPartA()
+    private int setupNoRandPartA()
             throws IOException
     {
         if (this.suI2 <= this.last) {
             this.suChPrev = this.suCh2;
-            int suCh2Shadow = this.data.ll8[this.suTPos] & 0xff;
+            int suCh2Shadow = this.data.raw[this.suI2] & 0xff;
             this.suCh2 = suCh2Shadow;
-            this.suTPos = this.data.tt[this.suTPos];
             this.suI2++;
-            this.currentChar = suCh2Shadow;
-            this.currentState = STATE.NO_RAND_PART_B_STATE;
+            this.currentState = NO_RAND_PART_B_STATE;
             this.crc32.updateCRC(suCh2Shadow);
+            return suCh2Shadow;
         }
-        else {
-            this.currentState = STATE.NO_RAND_PART_A_STATE;
-            endBlock();
-            initBlock();
-            setupBlock();
-        }
+        this.currentState = NO_RAND_PART_A_STATE;
+        endBlock();
+        initBlock();
+        return setupBlock();
     }
 
-    private void setupRandPartB()
+    private int setupRandPartB()
             throws IOException
     {
         if (this.suCh2 != this.suChPrev) {
-            this.currentState = STATE.RAND_PART_A_STATE;
+            this.currentState = RAND_PART_A_STATE;
             this.suCount = 1;
-            setupRandPartA();
+            return setupRandPartA();
         }
-        else if (++this.suCount >= 4) {
-            this.suZ = (char) (this.data.ll8[this.suTPos] & 0xff);
-            this.suTPos = this.data.tt[this.suTPos];
-            if (this.suRNToGo == 0) {
-                this.suRNToGo = R_NUMS[this.suRTPos] - 1;
-                if (++this.suRTPos == 512) {
-                    this.suRTPos = 0;
-                }
+        if (++this.suCount < 4) {
+            this.currentState = RAND_PART_A_STATE;
+            return setupRandPartA();
+        }
+        int v = this.data.tt[this.suTPos];
+        this.suZ = v & 0xff;
+        this.suTPos = v >>> 8;
+        if (this.suRNToGo == 0) {
+            this.suRNToGo = R_NUMS[this.suRTPos] - 1;
+            if (++this.suRTPos == 512) {
+                this.suRTPos = 0;
             }
-            else {
-                this.suRNToGo--;
-            }
-            this.suJ2 = 0;
-            this.currentState = STATE.RAND_PART_C_STATE;
-            if (this.suRNToGo == 1) {
-                this.suZ ^= 1;
-            }
-            setupRandPartC();
         }
         else {
-            this.currentState = STATE.RAND_PART_A_STATE;
-            setupRandPartA();
+            this.suRNToGo--;
         }
+        this.suJ2 = 0;
+        this.currentState = RAND_PART_C_STATE;
+        if (this.suRNToGo == 1) {
+            this.suZ ^= 1;
+        }
+        return setupRandPartC();
     }
 
-    private void setupRandPartC()
+    private int setupRandPartC()
             throws IOException
     {
         if (this.suJ2 < this.suZ) {
-            this.currentChar = this.suCh2;
             this.crc32.updateCRC(this.suCh2);
             this.suJ2++;
+            return this.suCh2;
         }
-        else {
-            this.currentState = STATE.RAND_PART_A_STATE;
-            this.suI2++;
-            this.suCount = 0;
-            setupRandPartA();
-        }
+        this.currentState = RAND_PART_A_STATE;
+        this.suI2++;
+        this.suCount = 0;
+        return setupRandPartA();
     }
 
-    private void setupNoRandPartB()
+    private int setupNoRandPartB()
             throws IOException
     {
         if (this.suCh2 != this.suChPrev) {
             this.suCount = 1;
-            setupNoRandPartA();
+            return setupNoRandPartA();
         }
-        else if (++this.suCount >= 4) {
-            this.suZ = (char) (this.data.ll8[this.suTPos] & 0xff);
-            this.suTPos = this.data.tt[this.suTPos];
+        if (++this.suCount >= 4) {
+            this.suZ = this.data.raw[this.suI2] & 0xff;
             this.suJ2 = 0;
-            setupNoRandPartC();
+            return setupNoRandPartC();
         }
-        else {
-            setupNoRandPartA();
-        }
+        return setupNoRandPartA();
     }
 
-    private void setupNoRandPartC()
+    private int setupNoRandPartC()
             throws IOException
     {
         if (this.suJ2 < this.suZ) {
             int suCh2Shadow = this.suCh2;
-            this.currentChar = suCh2Shadow;
             this.crc32.updateCRC(suCh2Shadow);
             this.suJ2++;
-            this.currentState = STATE.NO_RAND_PART_C_STATE;
+            this.currentState = NO_RAND_PART_C_STATE;
+            return suCh2Shadow;
         }
-        else {
-            this.suI2++;
-            this.suCount = 0;
-            setupNoRandPartA();
-        }
+        this.suI2++;
+        this.suCount = 0;
+        return setupNoRandPartA();
     }
 
     private static final class Data
     {
         // (with blockSize 900k)
         final boolean[] inUse = new boolean[256]; // 256 byte
+        // Always equal to the number of true values in inUse[].
+        int inUseCount;
 
         final byte[] seqToUnseq = new byte[256]; // 256 byte
         final byte[] selector = new byte[MAX_SELECTORS]; // 18002 byte
@@ -1162,52 +1009,58 @@ class CBZip2InputStream
          */
         final int[] unzftab = new int[256]; // 1024 byte
 
-        final int[][] limit = new int[N_GROUPS][MAX_ALPHA_SIZE]; // 6192 byte
-        final int[][] base = new int[N_GROUPS][MAX_ALPHA_SIZE]; // 6192 byte
+        /**
+         * Huffman decoding tables, one group per {@link BZip2Constants#N_GROUPS}:
+         * a lookup table indexed by the next {@link #FAST_BITS} bits of input
+         * (entry = symbol {@code << 8 | code length}, 0 = no code of at most
+         * {@link #FAST_BITS} bits matches), and the canonical-code tables for
+         * longer codes.
+         */
+        final int[] fastTable = new int[N_GROUPS << FAST_BITS]; // 24576 byte
+
+        final int[][] limit = new int[N_GROUPS][MAX_CODE_LEN + 2];
+        final int[][] bias = new int[N_GROUPS][MAX_CODE_LEN + 2];
         final int[][] perm = new int[N_GROUPS][MAX_ALPHA_SIZE]; // 6192 byte
         final int[] minLens = new int[N_GROUPS]; // 24 byte
+        final int[] maxLens = new int[N_GROUPS]; // 24 byte
+
+        /** Number of Huffman groups in the current block. */
+        int nGroups;
+
+        /** Scratch space for building the Huffman tables. */
+        final int[] codeLengths = new int[MAX_ALPHA_SIZE];
+        final int[] lengthCount = new int[MAX_CODE_LEN + 2];
+        final int[] lengthOffset = new int[MAX_CODE_LEN + 2];
 
         final int[] cftab = new int[257]; // 1028 byte
-        final char[] getAndMoveToFrontDecodeYy = new char[256]; // 512 byte
-        final char[][] tempCharArray2D = new char[N_GROUPS][MAX_ALPHA_SIZE]; // 3096
-        // byte
+        final int[] yy = new int[256]; // 1024 byte
         final byte[] recvDecodingTablesPos = new byte[N_GROUPS]; // 6 byte
-        // ---------------
-        // 60798 byte
 
-        int[] tt; // 3600000 byte
-        byte[] ll8; // 900000 byte
+        /**
+         * The block: while decoding the MTF/RLE2 stage the low 8 bits of
+         * {@code tt[i]} hold byte {@code i} of the BWT-transformed block, after
+         * the inverse BWT setup the upper 24 bits of {@code tt[i]} hold the index
+         * of the byte following byte {@code i} in the original data (block sizes
+         * are at most 900,000 &lt; 2^24).
+         */
+        final int[] tt; // 3600000 byte
 
-        // ---------------
-        // 4560782 byte
-        // ===============
+        /**
+         * The block in original order, {@code raw[0..last]}, produced by the
+         * inverse BWT for non-randomised blocks; {@code raw[last + 1]} holds the
+         * byte the cycle continues with (read as an RLE1 repeat count if a
+         * corrupt block ends inside a run).
+         */
+        final byte[] raw; // 900001 byte
+
+        final BZip2InverseBwt inverseBwt; // about 1.4 MB
 
         Data(int blockSize100k)
         {
-            this.ll8 = new byte[blockSize100k * BZip2Constants.BASE_BLOCK_SIZE];
-        }
-
-        /**
-         * Initializes the {@link #tt} array.
-         * <p>
-         * This method is called when the required length of the array is known.
-         * I don't initialize it at construction time to avoid unnecessary
-         * memory allocation when compressing small files.
-         */
-        int[] initTT(int length)
-        {
-            int[] ttShadow = this.tt;
-
-            // tt.length should always be >= length, but theoretically
-            // it can happen, if the compressor mixed small and large
-            // blocks. Normally only the last block will be smaller
-            // than others.
-            if ((ttShadow == null) || (ttShadow.length < length)) {
-                ttShadow = new int[length];
-                this.tt = ttShadow;
-            }
-
-            return ttShadow;
+            int n = blockSize100k * BASE_BLOCK_SIZE;
+            this.tt = new int[n];
+            this.raw = new byte[n + 1];
+            this.inverseBwt = new BZip2InverseBwt(n);
         }
     }
 

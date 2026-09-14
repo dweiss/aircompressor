@@ -468,7 +468,7 @@ class CBZip2OutputStream
      * @throws NullPointerException if <code>out == null</code>.
      * @see #MAX_BLOCK_SIZE
      */
-    private CBZip2OutputStream(final OutputStream out, final int blockSize)
+    CBZip2OutputStream(final OutputStream out, final int blockSize)
             throws IOException
     {
         if (blockSize < 1) {
@@ -593,7 +593,9 @@ class CBZip2OutputStream
                 outShadow = null;
             }
             finally {
-                outShadow.close();
+                if (outShadow != null) {
+                    outShadow.close();
+                }
             }
         }
     }

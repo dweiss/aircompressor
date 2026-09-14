@@ -37,5 +37,12 @@ final class BZip2Constants
     public static final int G_SIZE = 50;
     public static final int MAX_SELECTORS = (2 + (900000 / G_SIZE));
 
+    /**
+     * Maximum length of a Huffman code accepted by the decoder. The reference
+     * bzip2 decoder enforces 20 (and its encoder has used at most 17 since
+     * version 1.0.6).
+     */
+    public static final int MAX_CODE_LEN = 20;
+
     private BZip2Constants() {}
 }
