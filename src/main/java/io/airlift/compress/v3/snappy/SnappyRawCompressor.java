@@ -124,20 +124,23 @@ final class SnappyRawCompressor
                 //
                 // Heuristic match skipping: If 32 bytes are scanned with no matches
                 // found, start looking only at every other byte. If 32 more bytes are
-                // scanned, look at every third byte, etc.. When a match is found,
-                // immediately go back to looking at every byte. This is a small loss
-                // (~5% performance, ~0.1% density) for compressible data due to more
+                // scanned (or skipped), look at every third byte, etc.. When a match is
+                // found, immediately go back to looking at every byte. This is a small
+                // loss (~5% performance, ~0.1% density) for compressible data due to more
                 // bookkeeping, but for non-compressible data (such as JPEG) it's a huge
                 // win since the compressor quickly "realizes" the data is incompressible
                 // and doesn't bother looking for matches everywhere.
                 //
                 // The "skip" variable keeps track of how many bytes there are since the
                 // last match; dividing it by 32 (ie. right-shifting by five) gives the
-                // number of bytes to move ahead for each iteration.
+                // number of bytes to move ahead for each iteration. Skipped bytes count
+                // towards "skip" as well (as in the current C++ implementation), so the
+                // step grows geometrically and incompressible input is left behind
+                // after a few dozen lookups.
                 int skip = 32;
 
                 int candidateIndex = 0;
-                for (input += 1; input + (skip >>> 5) <= fastInputLimit; input += ((skip++) >>> 5)) {
+                for (input += 1; input + (skip >>> 5) <= fastInputLimit; input += (skip >>> 5), skip += (skip >>> 5)) {
                     // hash the 4 bytes starting at the input pointer
                     int currentInt = (int) Mem.INT_LE.get(inputBase, input);
                     int hash = hashBytes(currentInt, shift);
