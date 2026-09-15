@@ -196,6 +196,10 @@ with a default value of `java.io.tmpdir`. This is useful when the default tempor
 
 Loading of native libraries can be disabled entirely by setting the `io.airlift.compress.v3.disable-native` system property.
 
+The Java snappy decompressor copies long literal runs through the incubating Vector API when the JVM is started
+with `--add-modules jdk.incubator.vector`; without the module it falls back to scalar code. The vector path can be
+disabled with the `io.airlift.compress.v3.disable-vector` system property.
+
 # Users
 
 This library is used in projects such as Trino (https://trino.io), a distributed SQL engine.
