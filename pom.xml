@@ -60,8 +60,6 @@
         <air.test.parallel>methods</air.test.parallel>
         <air.test.thread-count>4</air.test.thread-count>
         <air.test.jvmsize>2G</air.test.jvmsize>
-        <!-- the incubating Vector API is optional at runtime (see VectorSupport) but needed to compile -->
-        <air.test.jvm.additional-arguments>--add-modules jdk.incubator.vector</air.test.jvm.additional-arguments>
 
         <!-- do not run tests on release -->
         <air.release.preparation-goals>clean verify -DskipTests</air.release.preparation-goals>
@@ -165,10 +163,6 @@
                     <configuration>
                         <target>${project.build.targetJdk}</target>
                         <release combine.self="override" />
-                        <compilerArgs combine.children="append">
-                            <arg>--add-modules</arg>
-                            <arg>jdk.incubator.vector</arg>
-                        </compilerArgs>
                         <annotationProcessorPaths>
                             <path>
                                 <groupId>org.openjdk.jmh</groupId>

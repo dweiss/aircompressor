@@ -14,8 +14,6 @@
 package io.airlift.compress.v3.snappy;
 
 import io.airlift.compress.v3.MalformedInputException;
-import io.airlift.compress.v3.internal.VectorCopy;
-import io.airlift.compress.v3.internal.VectorSupport;
 
 import java.util.Locale;
 
@@ -25,13 +23,6 @@ import static io.airlift.compress.v3.snappy.SnappyConstants.SIZE_OF_LONG;
 
 final class SnappyRawDecompressor
 {
-    // Literals are copied a vector at a time when the Vector API is available (see VectorSupport). Matches are not:
-    // a wide load over bytes the previous stores have just written stalls, and the measured result was a net loss.
-    private static final boolean VECTOR_ENABLED = VectorSupport.isEnabled();
-    private static final int VECTOR_BYTES = VectorSupport.vectorBytes();
-    // literals shorter than this are copied 8 bytes at a time: a vector copy only pays off past a couple of longs
-    private static final int MIN_VECTOR_LITERAL = 2 * SIZE_OF_LONG;
-
     private static final int[] DEC_32_TABLE = {4, 1, 2, 1, 4, 4, 4, 4};
     private static final int[] DEC_64_TABLE = {0, 0, 0, -1, 0, 1, 2, 3};
 
@@ -132,13 +123,7 @@ final class SnappyRawDecompressor
 
                 // copy literal
                 int literalOutputLimit = output + literalLength;
-                if (VECTOR_ENABLED && literalLength > MIN_VECTOR_LITERAL && literalOutputLimit <= outputLimit - VECTOR_BYTES && input + literalLength <= inputLimit - VECTOR_BYTES) {
-                    // vector copy, over-copying up to a vector past the literal into the room checked above
-                    VectorCopy.copyRoundedUp(inputBase, input, outputBase, output, literalLength);
-                    input += literalLength;
-                    output = literalOutputLimit;
-                }
-                else if (literalOutputLimit > fastOutputLimit || input + literalLength > inputLimit - SIZE_OF_LONG) {
+                if (literalOutputLimit > fastOutputLimit || input + literalLength > inputLimit - SIZE_OF_LONG) {
                     if (literalOutputLimit > outputLimit || input + literalLength > inputLimit) {
                         throw new MalformedInputException(input - inputAddress);
                     }
