@@ -5,7 +5,7 @@
 
     <groupId>com.carrotsearch.thirdparty.airlift</groupId>
     <artifactId>aircompressor-v3-jdk25</artifactId>
-    <version>3.8-SNAPSHOT</version>
+    <version>3.8</version>
     <packaging>jar</packaging>
 
     <name>aircompressor (Carrot Search fork)</name>
@@ -367,6 +367,7 @@
                         <extensions>true</extensions>
                         <configuration>
                             <publishingServerId>central</publishingServerId>
+                            <deploymentName>${project.artifactId}-${project.version}</deploymentName>
                             <autoPublish>false</autoPublish>
                             <waitUntil>validated</waitUntil>
                         </configuration>
