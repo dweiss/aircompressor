@@ -55,6 +55,8 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
         <test.jvmsize>2G</test.jvmsize>
+        <!-- concurrent test classes, as a fraction of the available cores -->
+        <test.parallelism.factor>0.5</test.parallelism.factor>
 
         <dep.assertj.version>3.27.7</dep.assertj.version>
         <dep.checkstyle.version>13.8.0</dep.checkstyle.version>
@@ -264,6 +266,16 @@
                 <configuration>
                     <trimStackTrace>false</trimStackTrace>
                     <runOrder>random</runOrder>
+                    <properties>
+                        <!-- test classes run concurrently, the methods of a class one after the other -->
+                        <configurationParameters>
+                            junit.jupiter.execution.parallel.enabled = true
+                            junit.jupiter.execution.parallel.mode.default = same_thread
+                            junit.jupiter.execution.parallel.mode.classes.default = concurrent
+                            junit.jupiter.execution.parallel.config.strategy = dynamic
+                            junit.jupiter.execution.parallel.config.dynamic.factor = ${test.parallelism.factor}
+                        </configurationParameters>
+                    </properties>
                     <argLine>-Xmx${test.jvmsize} -Xms${test.jvmsize} -XX:+ExitOnOutOfMemoryError -XX:-OmitStackTraceInFastThrow -Dfile.encoding=UTF-8 -Duser.language=en -Duser.region=US -Duser.timezone=UTC</argLine>
                 </configuration>
             </plugin>
