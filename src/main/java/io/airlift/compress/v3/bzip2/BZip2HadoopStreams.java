@@ -42,7 +42,7 @@ public class BZip2HadoopStreams
      *
      * @param executor runs the block decompressions; not shut down or otherwise owned by the streams
      * @param maxConcurrentInFlight the maximum number of blocks each input stream reads ahead and
-     * decompresses concurrently, see {@link CBZip2InputStream#CBZip2InputStream(InputStream, boolean, ExecutorService, int)}
+     * decompresses concurrently, see {@link BZip2InputStream#BZip2InputStream(InputStream, boolean, ExecutorService, int)}
      */
     public BZip2HadoopStreams(ExecutorService executor, int maxConcurrentInFlight)
     {

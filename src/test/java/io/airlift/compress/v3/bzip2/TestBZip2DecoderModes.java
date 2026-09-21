@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Tests of the single-stream mode (which leaves the source positioned right after the bzip2 stream)
- * and of the parallel block decoder of {@link CBZip2InputStream}.
+ * and of the parallel block decoder of {@link BZip2InputStream}, and of {@link BZip2OutputStream}.
  */
 class TestBZip2DecoderModes
 {
@@ -82,7 +82,7 @@ class TestBZip2DecoderModes
             throws IOException
     {
         InputStream source = new ByteArrayInputStream(INPUT);
-        CBZip2InputStream in = new CBZip2InputStream(source, false);
+        BZip2InputStream in = new BZip2InputStream(source, false);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         int value;
         while ((value = in.read()) >= 0) {
@@ -101,11 +101,11 @@ class TestBZip2DecoderModes
         corrupted[FIRST_COMPRESSED.length / 2] ^= 0x10;
 
         InputStream withMark = new ByteArrayInputStream(corrupted);
-        assertThatThrownBy(() -> new CBZip2InputStream(withMark, false).readAllBytes())
+        assertThatThrownBy(() -> new BZip2InputStream(withMark, false).readAllBytes())
                 .isInstanceOf(IOException.class);
 
         InputStream withoutMark = withoutMark(new ByteArrayInputStream(corrupted));
-        assertThatThrownBy(() -> new CBZip2InputStream(withoutMark, false).readAllBytes())
+        assertThatThrownBy(() -> new BZip2InputStream(withoutMark, false).readAllBytes())
                 .isInstanceOf(IOException.class);
 
         // Not at the end of the 64 KiB chunk that was read ahead, but at the first byte not consumed. A source
@@ -119,7 +119,7 @@ class TestBZip2DecoderModes
     void testParallelSingleStream()
             throws IOException
     {
-        try (InputStream in = new CBZip2InputStream(new ByteArrayInputStream(INPUT), false, EXECUTOR, 3)) {
+        try (InputStream in = new BZip2InputStream(new ByteArrayInputStream(INPUT), false, EXECUTOR, 3)) {
             assertThat(in.readAllBytes()).isEqualTo(FIRST);
             assertThat(in.read()).isEqualTo(-1);
         }
@@ -130,7 +130,7 @@ class TestBZip2DecoderModes
             throws IOException
     {
         for (int maxConcurrentInFlight : new int[] {1, 2, 16}) {
-            try (InputStream in = new CBZip2InputStream(new ByteArrayInputStream(INPUT), true, EXECUTOR, maxConcurrentInFlight)) {
+            try (InputStream in = new BZip2InputStream(new ByteArrayInputStream(INPUT), true, EXECUTOR, maxConcurrentInFlight)) {
                 assertThat(in.readAllBytes()).isEqualTo(concat(FIRST, SECOND));
             }
         }
@@ -141,7 +141,7 @@ class TestBZip2DecoderModes
             throws IOException
     {
         // the "BZ" magic of the first stream is optional
-        try (InputStream in = new CBZip2InputStream(new ByteArrayInputStream(INPUT, 2, INPUT.length - 2), true, EXECUTOR, 3)) {
+        try (InputStream in = new BZip2InputStream(new ByteArrayInputStream(INPUT, 2, INPUT.length - 2), true, EXECUTOR, 3)) {
             assertThat(in.readAllBytes()).isEqualTo(concat(FIRST, SECOND));
         }
     }
@@ -173,9 +173,9 @@ class TestBZip2DecoderModes
     @Test
     void testParallelRejectsInvalidArguments()
     {
-        assertThatThrownBy(() -> new CBZip2InputStream(new ByteArrayInputStream(INPUT), true, EXECUTOR, 0))
+        assertThatThrownBy(() -> new BZip2InputStream(new ByteArrayInputStream(INPUT), true, EXECUTOR, 0))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new CBZip2InputStream(new ByteArrayInputStream(INPUT), true, null, 1))
+        assertThatThrownBy(() -> new BZip2InputStream(new ByteArrayInputStream(INPUT), true, null, 1))
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> new BZip2HadoopStreams(EXECUTOR, 0))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -190,6 +190,67 @@ class TestBZip2DecoderModes
         }
     }
 
+    @Test
+    void testOutputStreamWritesCompleteStream()
+            throws IOException
+    {
+        for (int blockSize : new int[] {BZip2OutputStream.MIN_BLOCK_SIZE, 5, BZip2OutputStream.MAX_BLOCK_SIZE}) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            try (BZip2OutputStream compressor = new BZip2OutputStream(out, blockSize)) {
+                compressor.write(FIRST, 0, 1000);
+                for (int i = 1000; i < 2000; i++) {
+                    compressor.write(FIRST[i]);
+                }
+                compressor.write(FIRST, 2000, FIRST.length - 2000);
+            }
+            byte[] compressed = out.toByteArray();
+            assertThat(Arrays.copyOf(compressed, 4)).isEqualTo(new byte[] {'B', 'Z', 'h', (byte) ('0' + blockSize)});
+            assertThat(new BZip2InputStream(new ByteArrayInputStream(compressed)).readAllBytes()).isEqualTo(FIRST);
+        }
+
+        assertThatThrownBy(() -> new BZip2OutputStream(new ByteArrayOutputStream(), 0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new BZip2OutputStream(new ByteArrayOutputStream(), 10)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void testOutputStreamFinishLeavesUnderlyingStreamOpen()
+            throws IOException
+    {
+        int[] closed = new int[1];
+        ByteArrayOutputStream out = new ByteArrayOutputStream()
+        {
+            @Override
+            public void close()
+            {
+                closed[0]++;
+            }
+        };
+
+        BZip2OutputStream compressor = new BZip2OutputStream(out);
+        compressor.write(SECOND);
+        compressor.finish();
+        assertThat(closed[0]).isEqualTo(0);
+        out.writeBytes(TAIL);
+
+        // closing after finish() still closes the underlying stream
+        compressor.close();
+        assertThat(closed[0]).isEqualTo(1);
+
+        InputStream source = new ByteArrayInputStream(out.toByteArray());
+        assertThat(new BZip2InputStream(source, false).readAllBytes()).isEqualTo(SECOND);
+        assertThat(source.readAllBytes()).isEqualTo(TAIL);
+    }
+
+    @Test
+    @SuppressWarnings("deprecation")
+    void testDeprecatedClassName()
+            throws IOException
+    {
+        assertThat(new CBZip2InputStream(new ByteArrayInputStream(INPUT)).readAllBytes()).isEqualTo(concat(FIRST, SECOND));
+        assertThat(new CBZip2InputStream(new ByteArrayInputStream(INPUT), false).readAllBytes()).isEqualTo(FIRST);
+        assertThat(new CBZip2InputStream(new ByteArrayInputStream(INPUT), false, EXECUTOR, 2).readAllBytes()).isEqualTo(FIRST);
+    }
+
     /**
      * Decompresses the two streams of {@link #INPUT} one at a time; each decoder must leave the source
      * at the first byte after its stream.
@@ -197,11 +258,11 @@ class TestBZip2DecoderModes
     private static void assertSingleStreams(InputStream source)
             throws IOException
     {
-        CBZip2InputStream first = new CBZip2InputStream(source, false);
+        BZip2InputStream first = new BZip2InputStream(source, false);
         assertThat(first.readAllBytes()).isEqualTo(FIRST);
         assertThat(first.getProcessedByteCount()).isEqualTo(FIRST_COMPRESSED.length);
 
-        assertThat(new CBZip2InputStream(source, false).readAllBytes()).isEqualTo(SECOND);
+        assertThat(new BZip2InputStream(source, false).readAllBytes()).isEqualTo(SECOND);
         assertThat(source.readAllBytes()).isEqualTo(TAIL);
     }
 

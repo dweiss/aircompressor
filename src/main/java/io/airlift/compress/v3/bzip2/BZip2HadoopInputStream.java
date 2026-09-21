@@ -29,7 +29,7 @@ class BZip2HadoopInputStream
     private final ExecutorService executor;
     private final int maxConcurrentInFlight;
     private final byte[] oneByte = new byte[1];
-    private CBZip2InputStream input;
+    private BZip2InputStream input;
 
     public BZip2HadoopInputStream(InputStream in)
     {
@@ -53,8 +53,8 @@ class BZip2HadoopInputStream
 
         if (input == null) {
             input = executor == null
-                    ? new CBZip2InputStream(in, true)
-                    : new CBZip2InputStream(in, true, executor, maxConcurrentInFlight);
+                    ? new BZip2InputStream(in, true)
+                    : new BZip2InputStream(in, true, executor, maxConcurrentInFlight);
         }
 
         return input.read(buffer, offset, length);

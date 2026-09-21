@@ -25,10 +25,15 @@ without `sun.misc.Unsafe`, JNI or bundled native libraries.
 * **Standalone build.** The `io.airlift:airbase` parent pom is gone; `pom.xml` declares its plugins
   and dependency versions directly and keeps the same checkstyle rules and license header check.
 * **Faster bzip2 decompression**: a bulk bit reader, Huffman lookup tables and a multi-chain
-  inverse BWT, brought over from the Lingo4G decoder. `CBZip2InputStream` is public: it decompresses
+  inverse BWT, brought over from the Lingo4G decoder. `BZip2InputStream` decompresses
   concatenated streams (for example the output of `pbzip2`), or stops after the first stream and
   leaves the input positioned right after it, and it can decompress the blocks of a stream
   concurrently on an `ExecutorService` (also available as `new BZip2HadoopStreams(executor, n)`).
+  `BZip2OutputStream` writes complete `.bz2` streams. (`CBZip2InputStream`, the name of the
+  decompressor in version 3.8, is deprecated.)
+* **lz4-java block streams**: `Lz4BlockInputStream` and `Lz4BlockOutputStream` read and write the
+  format of lz4-java's `LZ4BlockInputStream`/`LZ4BlockOutputStream` (checksummed blocks with an
+  end mark), on top of the Java LZ4 codec.
 * **Snappy** uses the match-skip heuristic of current upstream Snappy, which speeds up
   incompressible input.
 
@@ -96,6 +101,9 @@ to Snappy and LZO. LZ4 is an excellent choice for applications that require high
 compression and decompression.
 
 LZ4 is provided by `Lz4JavaCompressor` and `Lz4JavaDecompressor`.
+
+Streams in the format of [lz4-java](https://github.com/yawkat/lz4-java)'s `LZ4BlockOutputStream`
+are supported by `Lz4BlockInputStream` and `Lz4BlockOutputStream`.
 
 The [LZ4 frame format](https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md), which is the
 format produced by the `lz4` command line tool, is supported by `Lz4FrameJavaCompressor` and

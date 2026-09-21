@@ -49,8 +49,8 @@ import static io.airlift.compress.v3.bzip2.BZip2Constants.RUN_B;
  * </pre>
  *
  * <p>
- * To get the memory required for decompression by {@link CBZip2InputStream
- * CBZip2InputStream} use
+ * To get the memory required for decompression by {@link BZip2InputStream
+ * BZip2InputStream} use
  * </p>
  *
  * <pre>
@@ -116,7 +116,7 @@ import static io.airlift.compress.v3.bzip2.BZip2Constants.RUN_B;
  * </table>
  *
  * <p>
- * For decompression <tt>CBZip2InputStream</tt> allocates less memory if the
+ * For decompression <tt>BZip2InputStream</tt> allocates less memory if the
  * bzipped input is smaller than one block.
  * </p>
  *

@@ -36,7 +36,7 @@ import static java.util.Objects.requireNonNull;
  * therefore scanned for the block and end-of-stream magic numbers at every bit offset; each segment
  * between two magics is wrapped into a synthesized single-block bzip2 stream (header, the segment's
  * bits shifted to byte alignment, end-of-stream magic, and the block's own stored CRC as the
- * combined CRC) and handed to the executor, where a regular {@link CBZip2InputStream}
+ * combined CRC) and handed to the executor, where a regular {@link BZip2InputStream}
  * decodes and verifies it. The blocks are delivered in order and the per-stream combined CRC is
  * checked against the folded block CRCs.
  *
@@ -125,7 +125,7 @@ final class ParallelBZip2Decoder
             throws IOException
     {
         ByteArrayOutputStream out = new ByteArrayOutputStream(Math.max(64, synthesized.length * 3));
-        try (InputStream decoder = new CBZip2InputStream(new ByteArrayInputStream(synthesized), false)) {
+        try (InputStream decoder = new BZip2InputStream(new ByteArrayInputStream(synthesized), false)) {
             byte[] tmp = new byte[64 * 1024];
             int n;
             while ((n = decoder.read(tmp, 0, tmp.length)) >= 0) {

@@ -29,7 +29,7 @@ import java.util.concurrent.Executors;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class TestCBZip2InputStream
+class TestBZip2InputStream
 {
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(4, runnable -> {
         Thread thread = new Thread(runnable, "bzip2-test");
@@ -262,7 +262,7 @@ class TestCBZip2InputStream
     {
         // the "BZ" magic is optional: the sequential decoder gets the stream without it, the parallel one with it
         int offset = compressed.length >= 2 && compressed[0] == 'B' && compressed[1] == 'Z' ? 2 : 0;
-        return new CBZip2InputStream(new ByteArrayInputStream(compressed, offset, compressed.length - offset));
+        return new BZip2InputStream(new ByteArrayInputStream(compressed, offset, compressed.length - offset));
     }
 
     private static byte[] decompress(byte[] compressed, int chunkSize)
@@ -285,7 +285,7 @@ class TestCBZip2InputStream
     private static byte[] decompressParallel(byte[] compressed, int chunkSize)
             throws IOException
     {
-        try (InputStream in = new CBZip2InputStream(new ByteArrayInputStream(compressed), true, EXECUTOR, 4)) {
+        try (InputStream in = new BZip2InputStream(new ByteArrayInputStream(compressed), true, EXECUTOR, 4)) {
             return readAll(in, chunkSize);
         }
     }
