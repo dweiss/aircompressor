@@ -4,7 +4,8 @@
 > It turns the library into a pure-Java one: no `sun.misc.Unsafe`, no native code, nothing to
 > unpack or load at runtime. Java packages (`io.airlift.compress.v3`) and the API of the Java
 > implementations are unchanged, so it is a drop-in replacement wherever the Java codecs were used.
-> Upstream's releases and its `io.airlift:aircompressor-v3` Maven coordinates do not contain these changes.
+> Its Maven coordinates are `com.carrotsearch.thirdparty.airlift:aircompressor-v3-jdk25`; upstream's
+> `io.airlift:aircompressor-v3` releases do not contain these changes.
 
 This library provides a set of compression algorithms implemented in pure Java.
 The implementations access memory through `byte[]` arrays and `VarHandle` views only,
@@ -21,12 +22,23 @@ without `sun.misc.Unsafe`, JNI or bundled native libraries.
   return the Java implementations. Removed along the way, because they only worked with native code:
   XXHash3, `Lz4Compressor.create(int acceleration)`, `ZstdCompressor.create(int compressionLevel)`
   and the `useNative` argument of `Lz4HadoopStreams` and `SnappyHadoopStreams`.
+* **Standalone build.** The `io.airlift:airbase` parent pom is gone; `pom.xml` declares its plugins
+  and dependency versions directly and keeps the same checkstyle rules and license header check.
 * **Faster bzip2 decompression**: a bulk bit reader, Huffman lookup tables and a multi-chain
   inverse BWT.
 * **Snappy** uses the match-skip heuristic of current upstream Snappy, which speeds up
   incompressible input.
 
 # Usage
+
+```xml
+<dependency>
+    <groupId>com.carrotsearch.thirdparty.airlift</groupId>
+    <artifactId>aircompressor-v3-jdk25</artifactId>
+    <version>...</version>
+</dependency>
+```
+
 
 Each algorithm provides a simple block compression API using the `io.airlift.compress.v3.Compressor` 
 and `io.airlift.compress.v3.Decompressor` classes. Block compression is the simplest form of
