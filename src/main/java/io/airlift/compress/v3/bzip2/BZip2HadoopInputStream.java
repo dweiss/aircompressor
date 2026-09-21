@@ -15,21 +15,32 @@ package io.airlift.compress.v3.bzip2;
 
 import io.airlift.compress.v3.hadoop.HadoopInputStream;
 
-import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.concurrent.ExecutorService;
+
+import static java.util.Objects.requireNonNull;
 
 // forked from Apache Hadoop
 class BZip2HadoopInputStream
         extends HadoopInputStream
 {
-    private final BufferedInputStream bufferedIn;
+    private final InputStream in;
+    private final ExecutorService executor;
+    private final int maxConcurrentInFlight;
     private final byte[] oneByte = new byte[1];
     private CBZip2InputStream input;
 
     public BZip2HadoopInputStream(InputStream in)
     {
-        bufferedIn = new BufferedInputStream(in);
+        this(in, null, 0);
+    }
+
+    BZip2HadoopInputStream(InputStream in, ExecutorService executor, int maxConcurrentInFlight)
+    {
+        this.in = requireNonNull(in, "in is null");
+        this.executor = executor;
+        this.maxConcurrentInFlight = maxConcurrentInFlight;
     }
 
     @Override
@@ -41,12 +52,9 @@ class BZip2HadoopInputStream
         }
 
         if (input == null) {
-            // If the stream starts with `BZ`, skip it
-            bufferedIn.mark(2);
-            if (bufferedIn.read() != 'B' || bufferedIn.read() != 'Z') {
-                bufferedIn.reset();
-            }
-            input = new CBZip2InputStream(bufferedIn);
+            input = executor == null
+                    ? new CBZip2InputStream(in, true)
+                    : new CBZip2InputStream(in, true, executor, maxConcurrentInFlight);
         }
 
         return input.read(buffer, offset, length);
@@ -66,7 +74,7 @@ class BZip2HadoopInputStream
     @Override
     public void resetState()
     {
-        // drop the current compression stream, and new one will be created during the next read
+        // drop the current compression stream and the input it has buffered, and new one will be created during the next read
         input = null;
     }
 
@@ -75,6 +83,6 @@ class BZip2HadoopInputStream
             throws IOException
     {
         input = null;
-        bufferedIn.close();
+        in.close();
     }
 }

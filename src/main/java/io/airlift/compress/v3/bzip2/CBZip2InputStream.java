@@ -22,6 +22,7 @@ package io.airlift.compress.v3.bzip2;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
+import java.util.concurrent.ExecutorService;
 
 import static io.airlift.compress.v3.bzip2.BZip2Constants.BASE_BLOCK_SIZE;
 import static io.airlift.compress.v3.bzip2.BZip2Constants.G_SIZE;
@@ -32,29 +33,33 @@ import static io.airlift.compress.v3.bzip2.BZip2Constants.N_GROUPS;
 import static io.airlift.compress.v3.bzip2.BZip2Constants.RUN_B;
 
 /**
- * An input stream that decompresses from the BZip2 format (without the file
- * header chars) to be read as any other stream.
+ * An input stream that decompresses from the BZip2 format to be read as any
+ * other stream. The {@code "BZ"} magic at the start of the data is optional:
+ * data that starts right after it (with the {@code 'h'} byte) is accepted, too.
  *
  * <p>
  * The decompression requires large amounts of memory. Thus you should call the
  * {@link #close() close()} method as soon as possible, to force
- * <tt>CBZip2InputStream</tt> to release the allocated memory. See
+ * {@code CBZip2InputStream} to release the allocated memory. See
  * {@link CBZip2OutputStream CBZip2OutputStream} for information about memory
  * usage.
  * </p>
  *
  * <p>
- * The compressed data is read in chunks of {@value BZip2BitReader#BUFFER_SIZE}
- * bytes, ahead of the decompressed position. Concatenated bzip2 streams are
- * decompressed one after the other; data following the last stream that is not
- * another bzip2 stream is ignored.
+ * When decompressing concatenated bzip2 streams they are decompressed one after
+ * the other and data following the last stream that is not another bzip2 stream
+ * is ignored; the compressed data is then read in chunks of
+ * {@value BZip2BitReader#BUFFER_SIZE} bytes, ahead of the decompressed position.
+ * Otherwise decompression stops after the first stream and leaves the input
+ * positioned at the next byte after it, see
+ * {@link #CBZip2InputStream(InputStream, boolean)}.
  * </p>
  *
  * <p>
  * Instances of this class are not thread safe.
  * </p>
  */
-class CBZip2InputStream
+public class CBZip2InputStream
         extends InputStream
 {
     /**
@@ -84,6 +89,8 @@ class CBZip2InputStream
     private final byte[] oneByte = new byte[1];
     private final Crc32 crc32 = new Crc32();
 
+    private final boolean decompressConcatenated;
+    private ParallelBZip2Decoder parallel;
     private BZip2BitReader bin;
     private boolean initialized;
 
@@ -129,36 +136,102 @@ class CBZip2InputStream
     private Data data;
 
     /**
-     * Constructs a new CBZip2InputStream which decompresses bytes read from the
-     * specified stream.
+     * Constructs a new CBZip2InputStream which decompresses all the concatenated
+     * bzip2 streams read from the specified stream.
      *
-     * <p>
-     * Although BZip2 headers are marked with the magic <tt>"Bz"</tt> this
-     * constructor expects the next byte in the stream to be the first one after
-     * the magic. Thus callers have to skip the first two bytes. Otherwise this
-     * constructor will throw an exception.
-     * </p>
-     *
-     * @throws NullPointerException if <tt>in == null</tt>
+     * @throws NullPointerException if {@code in == null}
      */
     public CBZip2InputStream(InputStream in)
     {
-        this.bin = new BZip2BitReader(in);
+        this(in, true);
     }
 
     /**
-     * Number of bytes of the compressed stream consumed so far.
+     * Constructs a new CBZip2InputStream which decompresses bytes read from the
+     * specified stream.
+     *
+     * @param decompressConcatenated if true, decompress until the end of the
+     * input; if false, stop after the first bzip2 stream and leave the input
+     * positioned at the next byte after it. The input is read in chunks of up to
+     * 64 KiB when it supports {@link InputStream#mark(int)} (for example a
+     * {@link java.io.BufferedInputStream}) or when decompressing concatenated
+     * streams, and a few bytes at a time otherwise, so wrap unbuffered sources
+     * in a {@link java.io.BufferedInputStream}. Note that the input's mark is
+     * used internally in the former case: a mark set by the caller before
+     * constructing this stream is not preserved.
+     * @throws NullPointerException if {@code in == null}
+     */
+    public CBZip2InputStream(InputStream in, boolean decompressConcatenated)
+    {
+        this.bin = new BZip2BitReader(in, decompressConcatenated);
+        this.decompressConcatenated = decompressConcatenated;
+    }
+
+    /**
+     * Constructs a new CBZip2InputStream that decompresses the blocks of the
+     * stream concurrently on the given {@link ExecutorService}.
+     *
+     * <p>
+     * Block boundaries are found by scanning the compressed data for the block
+     * magic numbers, the blocks are decompressed in parallel and delivered in
+     * order, and all CRCs are verified as usual, so valid streams produce exactly
+     * the bytes the single-threaded constructors produce. Corrupt or truncated
+     * input still fails with an {@link IOException}, though not necessarily with
+     * the same message or at the same output position as the single-threaded
+     * decoder. The input is read ahead of the decompressed position, so this mode
+     * does not leave the input positioned right after the bzip2 stream; use a
+     * single-threaded constructor when that matters.
+     * </p>
+     *
+     * @param decompressConcatenated if true, decompress until the end of the
+     * input; if false, stop after the first bzip2 stream
+     * @param executor runs the block decompressions; not shut down or otherwise
+     * owned by this stream
+     * @param maxConcurrentInFlight the maximum number of blocks read ahead and
+     * decompressed concurrently; the executor supplies the threads, this argument
+     * bounds the concurrency and the memory held by this stream (each in-flight
+     * block needs its compressed form plus its decompressed output, typically
+     * under 1 MiB but up to tens of MiB for highly repetitive data)
+     * @throws NullPointerException if {@code in == null} or {@code executor == null}
+     * @throws IllegalArgumentException if {@code maxConcurrentInFlight < 1}
+     */
+    public CBZip2InputStream(InputStream in, boolean decompressConcatenated, ExecutorService executor, int maxConcurrentInFlight)
+    {
+        this.parallel = new ParallelBZip2Decoder(in, decompressConcatenated, executor, maxConcurrentInFlight);
+        this.decompressConcatenated = decompressConcatenated;
+    }
+
+    /**
+     * Number of bytes of the compressed stream consumed so far (in the parallel
+     * mode: read so far, which is ahead of the decompressed position).
      */
     public long getProcessedByteCount()
     {
+        if (parallel != null) {
+            return parallel.getBytesRead();
+        }
         return bin == null ? 0 : bin.getBytesRead();
+    }
+
+    /**
+     * After an error, puts a source with mark/reset back at the first byte not
+     * consumed (a no-op for other sources).
+     */
+    private void repositionSourceAfter(Exception cause)
+    {
+        try {
+            bin.repositionSource();
+        }
+        catch (IOException | RuntimeException e) {
+            cause.addSuppressed(e);
+        }
     }
 
     @Override
     public int read()
             throws IOException
     {
-        if (bin == null) {
+        if (bin == null && parallel == null) {
             throw new IOException("stream closed");
         }
         return read(oneByte, 0, 1) < 0 ? -1 : (oneByte[0] & 0xff);
@@ -178,6 +251,9 @@ class CBZip2InputStream
             throw new IndexOutOfBoundsException("offs(" + offs + ") + len("
                     + len + ") > dest.length(" + dest.length + ").");
         }
+        if (parallel != null) {
+            return len == 0 ? 0 : parallel.read(dest, offs, len);
+        }
         if (bin == null) {
             throw new IOException("stream closed");
         }
@@ -185,6 +261,18 @@ class CBZip2InputStream
             return 0;
         }
 
+        try {
+            return readSequential(dest, offs, len);
+        }
+        catch (IOException | RuntimeException e) {
+            repositionSourceAfter(e);
+            throw e;
+        }
+    }
+
+    private int readSequential(byte[] dest, int offs, int len)
+            throws IOException
+    {
         if (!initialized) {
             initialized = true;
             init(true);
@@ -302,8 +390,8 @@ class CBZip2InputStream
     /**
      * Reads a stream header.
      *
-     * @param firstStream whether this is the first stream, whose <tt>"BZ"</tt>
-     * magic has been consumed by the caller
+     * @param firstStream whether this is the first stream, whose {@code "BZ"}
+     * magic is optional
      * @return false if there is no further stream
      */
     private boolean init(boolean firstStream)
@@ -311,6 +399,12 @@ class CBZip2InputStream
     {
         if (firstStream) {
             int magic2 = bin.readByteOrEof();
+            if (magic2 == 'B') {
+                if (bin.readByteOrEof() != 'Z') {
+                    throw new IOException("Stream is not BZip2 formatted");
+                }
+                magic2 = bin.readByteOrEof();
+            }
             if (magic2 != 'h') {
                 throw new IOException("Stream is not BZip2 formatted: expected 'h'"
                         + " as first byte but got '" + (char) magic2 + "'");
@@ -419,16 +513,25 @@ class CBZip2InputStream
         this.currentState = EOF;
         this.data = null;
 
+        if (!decompressConcatenated) {
+            bin.repositionSource();
+        }
         if (this.storedCombinedCRC != this.computedCombinedCRC) {
             throw new IOException("crc error");
         }
-        return !init(false);
+        return !decompressConcatenated || !init(false);
     }
 
     @Override
     public void close()
             throws IOException
     {
+        if (parallel != null) {
+            ParallelBZip2Decoder parallelShadow = this.parallel;
+            this.parallel = null;
+            parallelShadow.close();
+            return;
+        }
         BZip2BitReader binShadow = this.bin;
         if (binShadow != null) {
             try {
@@ -562,7 +665,7 @@ class CBZip2InputStream
 
         /* Receive the mapping table */
         for (int i = 0; i < 16; i++) {
-            if (bin.readBits(1) != 0) {
+            if (bin.readBitsInBlock(1) != 0) {
                 inUse16 |= 1 << i;
             }
         }
@@ -572,7 +675,7 @@ class CBZip2InputStream
             if ((inUse16 & (1 << i)) != 0) {
                 int i16 = i << 4;
                 for (int j = 0; j < 16; j++) {
-                    if (bin.readBits(1) != 0) {
+                    if (bin.readBitsInBlock(1) != 0) {
                         inUse[i16 + j] = true;
                     }
                 }
@@ -583,8 +686,8 @@ class CBZip2InputStream
         int alphaSize = dataShadow.inUseCount + 2;
 
         /* Now the selectors */
-        int nGroups = bin.readBits(3);
-        int selectors = bin.readBits(15);
+        int nGroups = bin.readBitsInBlock(3);
+        int selectors = bin.readBitsInBlock(15);
         checkBounds(alphaSize, MAX_ALPHA_SIZE + 1, "alphaSize");
         checkBounds(nGroups, N_GROUPS + 1, "nGroups");
 
@@ -592,7 +695,7 @@ class CBZip2InputStream
         // See https://gnu.wildebeest.org/blog/mjw/2019/08/02/bzip2-and-the-cve-that-wasnt/
         // and https://sourceware.org/ml/bzip2-devel/2019-q3/msg00007.html
         for (int i = 0; i < selectors; i++) {
-            int j = bin.readUnary();
+            int j = bin.readUnaryInBlock();
             if (i < MAX_SELECTORS) {
                 selectorMtf[i] = (byte) j;
             }
@@ -620,10 +723,10 @@ class CBZip2InputStream
         /* Now the Huffman coding tables */
         int[] codeLengths = dataShadow.codeLengths;
         for (int t = 0; t < nGroups; t++) {
-            int curr = bin.readBits(5);
+            int curr = bin.readBitsInBlock(5);
             for (int i = 0; i < alphaSize; i++) {
-                while (bin.readBits(1) != 0) {
-                    curr += bin.readBits(1) != 0 ? -1 : 1;
+                while (bin.readBitsInBlock(1) != 0) {
+                    curr += bin.readBitsInBlock(1) != 0 ? -1 : 1;
                 }
                 codeLengths[i] = curr;
             }
@@ -646,9 +749,9 @@ class CBZip2InputStream
         int[] limit = dataShadow.limit[group];
         int maxLen = dataShadow.maxLens[group];
         int len = dataShadow.minLens[group];
-        int code = bin.readBits(len);
+        int code = bin.readBitsInBlock(len);
         while (len <= maxLen && code > limit[len]) {
-            code = (code << 1) | bin.readBits(1);
+            code = (code << 1) | bin.readBitsInBlock(1);
             len++;
         }
         if (len > maxLen) {

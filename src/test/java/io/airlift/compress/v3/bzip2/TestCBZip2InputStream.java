@@ -23,12 +23,20 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TestCBZip2InputStream
 {
+    private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(4, runnable -> {
+        Thread thread = new Thread(runnable, "bzip2-test");
+        thread.setDaemon(true);
+        return thread;
+    });
+
     private static final int[] CHUNK_SIZES = {1, 3, 64, 4093, 65536, 1 << 20};
 
     @Test
@@ -252,7 +260,7 @@ class TestCBZip2InputStream
 
     private static InputStream open(byte[] compressed)
     {
-        // CBZip2InputStream expects the stream to start right after the "BZ" magic
+        // the "BZ" magic is optional: the sequential decoder gets the stream without it, the parallel one with it
         int offset = compressed.length >= 2 && compressed[0] == 'B' && compressed[1] == 'Z' ? 2 : 0;
         return new CBZip2InputStream(new ByteArrayInputStream(compressed, offset, compressed.length - offset));
     }
@@ -260,7 +268,24 @@ class TestCBZip2InputStream
     private static byte[] decompress(byte[] compressed, int chunkSize)
             throws IOException
     {
+        byte[] decompressed;
         try (InputStream in = open(compressed)) {
+            decompressed = readAll(in, chunkSize);
+        }
+        catch (IOException e) {
+            assertThatThrownBy(() -> decompressParallel(compressed, chunkSize))
+                    .isInstanceOf(IOException.class);
+            throw e;
+        }
+        // the parallel decoder must produce the same bytes
+        assertThat(decompressParallel(compressed, chunkSize)).isEqualTo(decompressed);
+        return decompressed;
+    }
+
+    private static byte[] decompressParallel(byte[] compressed, int chunkSize)
+            throws IOException
+    {
+        try (InputStream in = new CBZip2InputStream(new ByteArrayInputStream(compressed), true, EXECUTOR, 4)) {
             return readAll(in, chunkSize);
         }
     }

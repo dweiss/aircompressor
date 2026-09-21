@@ -25,7 +25,10 @@ without `sun.misc.Unsafe`, JNI or bundled native libraries.
 * **Standalone build.** The `io.airlift:airbase` parent pom is gone; `pom.xml` declares its plugins
   and dependency versions directly and keeps the same checkstyle rules and license header check.
 * **Faster bzip2 decompression**: a bulk bit reader, Huffman lookup tables and a multi-chain
-  inverse BWT.
+  inverse BWT, brought over from the Lingo4G decoder. `CBZip2InputStream` is public: it decompresses
+  concatenated streams (for example the output of `pbzip2`), or stops after the first stream and
+  leaves the input positioned right after it, and it can decompress the blocks of a stream
+  concurrently on an `ExecutorService` (also available as `new BZip2HadoopStreams(executor, n)`).
 * **Snappy** uses the match-skip heuristic of current upstream Snappy, which speeds up
   incompressible input.
 
@@ -170,6 +173,8 @@ Hadoop streams for the above algorithms. In addition, implementations of
 gzip and bzip2 are provided so that all standard Hadoop algorithms are available.
 The bzip2 decompressor is pure Java, reads its input in 64 KiB chunks and also
 decompresses concatenated bzip2 streams (for example the output of `pbzip2`).
+`new BZip2HadoopStreams(executor, maxConcurrentInFlight)` creates input streams that
+decompress the blocks of the data in parallel.
 
 The `HadoopStreams` class provides a factory for creating `InputStream` and `OutputStream`
 implementations without the need for any Hadoop dependencies.  For environments 
