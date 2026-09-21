@@ -20,17 +20,11 @@ public interface DeflateCompressor
 {
     static DeflateCompressor create()
     {
-        if (DeflateNativeCompressor.isEnabled()) {
-            return new DeflateNativeCompressor();
-        }
         return new DeflateJavaCompressor();
     }
 
     static DeflateCompressor create(int compressionLevel)
     {
-        if (DeflateNativeCompressor.isEnabled()) {
-            return new DeflateNativeCompressor(compressionLevel);
-        }
         return new DeflateJavaCompressor(compressionLevel);
     }
 }

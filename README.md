@@ -1,11 +1,30 @@
 # Compression for Java
-[![Maven Central](https://img.shields.io/maven-central/v/io.airlift/aircompressor-v3.svg?label=Maven%20Central)](https://search.maven.org/#search%7Cga%7C1%7Cg%3A%22io.airlift%22%20AND%20a%3A%22aircompressor-v3%22)
 
-This library provides a set of compression algorithms implemented in pure Java and 
-where possible native implementations. The Java implementations access memory through
-`byte[]` arrays and `VarHandle` views only, without `sun.misc.Unsafe`. The native
-implementations use `java.lang.foreign` to interact directly with native libraries
-without the need for JNI.
+> **This is a fork of [airlift/aircompressor](https://github.com/airlift/aircompressor).**
+> It turns the library into a pure-Java one: no `sun.misc.Unsafe`, no native code, nothing to
+> unpack or load at runtime. Java packages (`io.airlift.compress.v3`) and the API of the Java
+> implementations are unchanged, so it is a drop-in replacement wherever the Java codecs were used.
+> Upstream's releases and its `io.airlift:aircompressor-v3` Maven coordinates do not contain these changes.
+
+This library provides a set of compression algorithms implemented in pure Java.
+The implementations access memory through `byte[]` arrays and `VarHandle` views only,
+without `sun.misc.Unsafe`, JNI or bundled native libraries.
+
+# Differences from upstream
+
+* **No `sun.misc.Unsafe`.** Zstd, LZ4, Snappy and LZO access memory through `byte[]` arrays and
+  `VarHandle` views only, with follow-up tuning of each codec to win back the speed lost to
+  bounds-checked access.
+* **No native code.** The `java.lang.foreign` bindings (`*Native*` classes), the bundled shared
+  libraries and their loader are gone, together with the `aircompressor.tmpdir` and
+  `io.airlift.compress.v3.disable-native` system properties. The `create()` factories always
+  return the Java implementations. Removed along the way, because they only worked with native code:
+  XXHash3, `Lz4Compressor.create(int acceleration)`, `ZstdCompressor.create(int compressionLevel)`
+  and the `useNative` argument of `Lz4HadoopStreams` and `SnappyHadoopStreams`.
+* **Faster bzip2 decompression**: a bulk bit reader, Huffman lookup tables and a multi-chain
+  inverse BWT.
+* **Snappy** uses the match-skip heuristic of current upstream Snappy, which speeds up
+  incompressible input.
 
 # Usage
 
@@ -52,9 +71,7 @@ superior compression and performance at all levels compared to zlib. Zstandard i
 an excellent choice for most use cases, especially storage and bandwidth constrained
 network transfer.
 
-The native implementation of Zstandard is provided by the `ZstdNativeCompressor` and
-`ZstdNativeDecompressor` classes. The Java implementation is provided by the
-`ZstdJavaCompressor` and `ZstdJavaDecompressor` classes.
+Zstandard is provided by the `ZstdJavaCompressor` and `ZstdJavaDecompressor` classes.
 
 The Zstandard streaming format is supported by `ZstdInputStream` and `ZstdOutputStream`.
 
@@ -63,22 +80,18 @@ LZ4 is an extremely fast compression algorithm that provides compression ratios 
 to Snappy and LZO. LZ4 is an excellent choice for applications that require high-performance
 compression and decompression.
 
-The native implementation of LZ4 is provided by `Lz4NativeCompressor` and `Lz4NativeDecompressor`.
-The Java implementation is provided by `Lz4JavaCompressor` and `Lz4JavaDecompressor`.
+LZ4 is provided by `Lz4JavaCompressor` and `Lz4JavaDecompressor`.
 
 The [LZ4 frame format](https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md), which is the
-format produced by the `lz4` command line tool, is supported by `Lz4FrameNativeCompressor` and
-`Lz4FrameNativeDecompressor` (native), and `Lz4FrameJavaCompressor` and `Lz4FrameJavaDecompressor`
-(Java). The framing itself is always performed in Java; the implementations differ only in the
-raw block codec used to compress and decompress the block contents.
+format produced by the `lz4` command line tool, is supported by `Lz4FrameJavaCompressor` and
+`Lz4FrameJavaDecompressor`.
 
 ## [Snappy](https://google.github.io/snappy/)
 Snappy is not as fast as LZ4, but provides a guarantee on memory usage that makes it a good
 choice for extremely resource-limited environments (e.g. embedded systems like a network 
 switch). If your application is not highly resource constrained, LZ4 is a better choice.
 
-The native implementation of Snappy is provided by `SnappyNativeCompressor` and `SnappyNativeDecompressor`.
-The Java implementation is provided by `SnappyJavaCompressor` and `SnappyJavaDecompressor`.
+Snappy is provided by `SnappyJavaCompressor` and `SnappyJavaDecompressor`.
 
 The Snappy framed format is supported by `SnappyFramedInputStream` and `SnappyFramedOutputStream`.
 
@@ -99,44 +112,11 @@ This is implemented in the built-in Java libraries which internally use the nati
 
 # Hash Functions
 
-## [XXHash3](https://xxhash.com/) **(Recommended)**
-XXHash3 is the latest generation of the XXHash family, providing faster hashing than XXHash64
-at all input sizes. It supports both 64-bit and 128-bit hash outputs.
-
-XXHash3 is only available as a native implementation via `XxHash3Native`. There is no Java
-implementation available. The 128-bit variant has approximately 12ns of constant overhead due
-to Java FFM pulling the 128-bit result back into Java. At small inputs (<512 bytes) this
-overhead is noticeable, but at larger sizes (8KB+) it becomes a rounding error as hash
-computation dominates (measured on M4 Apple Silicon).
-
-```java
-// One-shot hashing (64-bit)
-long hash = XxHash3Native.hash(data);
-
-// One-shot hashing (128-bit)
-XxHash128 hash = XxHash3Native.hash128(data);
-
-// Streaming hashing (64-bit)
-try (XxHash3Hasher hasher = XxHash3Native.newHasher()) {
-    hasher.update(chunk1);
-    hasher.update(chunk2);
-    long hash = hasher.digest();
-}
-
-// Streaming hashing (128-bit)
-try (XxHash3Hasher128 hasher = XxHash3Native.newHasher128()) {
-    hasher.update(chunk1);
-    hasher.update(chunk2);
-    XxHash128 hash = hasher.digest();
-}
-```
-
 ## [XXHash64](https://xxhash.com/)
 XXHash64 is an extremely fast non-cryptographic hash function with excellent distribution properties.
 
-The native implementation is provided by `XxHash64NativeHasher` and the Java implementation
-is provided by `XxHash64JavaHasher`. The `XxHash64Hasher` interface provides static methods
-that automatically select the best available implementation.
+The implementation is provided by `XxHash64JavaHasher`. The `XxHash64Hasher` interface provides
+static one-shot methods and factories for streaming hashers.
 
 ```java
 // One-shot hashing
@@ -153,12 +133,10 @@ try (XxHash64Hasher hasher = XxHash64Hasher.create()) {
 
 ## [XXHash32](https://xxhash.com/)
 XXHash32 is the 32-bit variant of the XXHash family. It is provided primarily for formats that
-require a 32-bit hash, such as the LZ4 frame format. For general-purpose hashing, prefer XXHash3
-or XXHash64.
+require a 32-bit hash, such as the LZ4 frame format. For general-purpose hashing, prefer XXHash64.
 
-The native implementation is provided by `XxHash32NativeHasher` and the Java implementation
-is provided by `XxHash32JavaHasher`. The `XxHash32Hasher` interface provides static methods
-that automatically select the best available implementation.
+The implementation is provided by `XxHash32JavaHasher`. The `XxHash32Hasher` interface provides
+static one-shot methods and factories for streaming hashers.
 
 ```java
 // One-shot hashing
@@ -187,14 +165,7 @@ that have Hadoop dependencies, each algorithm also provides a `CompressionCodec`
 
 # Requirements
 
-This library requires a Java 22+ virtual machine. It does not use `sun.misc.Unsafe` and does not depend on the platform's byte order.
-
-# Configuration
-
-Temporary directory used to unpack and load native libraries can be configured using the `aircompressor.tmpdir` system property,
-with a default value of `java.io.tmpdir`. This is useful when the default temporary directory is mounted as `noexec`.
-
-Loading of native libraries can be disabled entirely by setting the `io.airlift.compress.v3.disable-native` system property.
+This library requires a Java 25+ virtual machine. It does not use `sun.misc.Unsafe` and does not depend on the platform's byte order.
 
 # Users
 

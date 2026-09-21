@@ -47,23 +47,6 @@ class TestXxHash32
     }
 
     @Test
-    void testJavaMatchesNative()
-    {
-        if (!XxHash32NativeHasher.isEnabled()) {
-            return;
-        }
-
-        for (int length : LENGTHS) {
-            byte[] data = data(length);
-            for (int seed : SEEDS) {
-                assertThat(XxHash32NativeHasher.hash(data, 0, length, seed))
-                        .describedAs("length=%s seed=%s", length, seed)
-                        .isEqualTo(XxHash32JavaHasher.hash(data, 0, length, seed));
-            }
-        }
-    }
-
-    @Test
     void testHeapAndNativeSegmentsMatchByteArray()
     {
         try (Arena arena = Arena.ofConfined()) {
@@ -110,12 +93,6 @@ class TestXxHash32
                     assertThat(digestInChunks(new XxHash32JavaHasher(seed), data, chunkSize))
                             .describedAs("java length=%s seed=%s chunk=%s", length, seed, chunkSize)
                             .isEqualTo(expected);
-
-                    if (XxHash32NativeHasher.isEnabled()) {
-                        assertThat(digestInChunks(new XxHash32NativeHasher(seed), data, chunkSize))
-                                .describedAs("native length=%s seed=%s chunk=%s", length, seed, chunkSize)
-                                .isEqualTo(expected);
-                    }
                 }
             }
         }
@@ -140,15 +117,6 @@ class TestXxHash32
                         assertThat(digestSegmentInChunks(new XxHash32JavaHasher(seed), nativeSegment, chunkSize))
                                 .describedAs("java native length=%s seed=%s chunk=%s", length, seed, chunkSize)
                                 .isEqualTo(expected);
-
-                        if (XxHash32NativeHasher.isEnabled()) {
-                            assertThat(digestSegmentInChunks(new XxHash32NativeHasher(seed), heap, chunkSize))
-                                    .describedAs("native heap length=%s seed=%s chunk=%s", length, seed, chunkSize)
-                                    .isEqualTo(expected);
-                            assertThat(digestSegmentInChunks(new XxHash32NativeHasher(seed), nativeSegment, chunkSize))
-                                    .describedAs("native native length=%s seed=%s chunk=%s", length, seed, chunkSize)
-                                    .isEqualTo(expected);
-                        }
                     }
                 }
             }

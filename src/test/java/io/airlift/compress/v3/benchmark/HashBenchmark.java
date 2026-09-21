@@ -13,10 +13,7 @@
  */
 package io.airlift.compress.v3.benchmark;
 
-import io.airlift.compress.v3.xxhash.XxHash128;
-import io.airlift.compress.v3.xxhash.XxHash3Native;
 import io.airlift.compress.v3.xxhash.XxHash64JavaHasher;
-import io.airlift.compress.v3.xxhash.XxHash64NativeHasher;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.Fork;
 import org.openjdk.jmh.annotations.Measurement;
@@ -37,7 +34,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 /**
- * JMH benchmark comparing XxHash64 and XxHash3 implementations.
+ * JMH benchmark of the XxHash64 implementation.
  *
  * <p>Run from Maven:
  * <pre>
@@ -70,8 +67,6 @@ public class HashBenchmark
         segment = MemorySegment.ofArray(data);
     }
 
-    // ========== XxHash64 Java (VarHandle-based) ==========
-
     @Benchmark
     public long xxhash64_java()
     {
@@ -82,48 +77,6 @@ public class HashBenchmark
     public long xxhash64_java_segment()
     {
         return XxHash64JavaHasher.hash(segment, 0);
-    }
-
-    // ========== XxHash64 Native ==========
-
-    @Benchmark
-    public long xxhash64_native()
-    {
-        return XxHash64NativeHasher.hash(data, 0, data.length, 0);
-    }
-
-    @Benchmark
-    public long xxhash64_native_segment()
-    {
-        return XxHash64NativeHasher.hash(segment, 0);
-    }
-
-    // ========== XxHash3 64-bit Native ==========
-
-    @Benchmark
-    public long xxhash3_64_native()
-    {
-        return XxHash3Native.hash(data);
-    }
-
-    @Benchmark
-    public long xxhash3_64_native_segment()
-    {
-        return XxHash3Native.hash(segment);
-    }
-
-    // ========== XxHash3 128-bit Native ==========
-
-    @Benchmark
-    public XxHash128 xxhash3_128_native()
-    {
-        return XxHash3Native.hash128(data);
-    }
-
-    @Benchmark
-    public XxHash128 xxhash3_128_native_segment()
-    {
-        return XxHash3Native.hash128(segment);
     }
 
     public static void main(String[] args)

@@ -47,13 +47,11 @@ import static java.nio.ByteOrder.LITTLE_ENDIAN;
 import static java.util.Objects.requireNonNull;
 
 /**
- * Shared implementation of the LZ4 frame format used by both the Java and native frame codecs.
+ * Implementation of the LZ4 frame format used by the frame codecs.
  * <p>
  * The framing (magic number, frame descriptor, the mandatory xxHash32 header checksum, block
- * framing and end mark) is handled here in Java, while the per-block compression is delegated to a
- * raw LZ4 block {@link Lz4Compressor}/{@link Lz4Decompressor}. This keeps the two implementations
- * identical apart from the block codec, and means the native codec only relies on the raw block
- * functions of the native library rather than its frame API.
+ * framing and end mark) is handled here, while the per-block compression is delegated to a
+ * raw LZ4 block {@link Lz4Compressor}/{@link Lz4Decompressor}.
  * <p>
  * Frames are always written with independent blocks so they can be decoded block-by-block.
  * Decompression handles multiple concatenated frames, skipping any skippable frames. Frames using

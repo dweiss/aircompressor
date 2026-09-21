@@ -24,20 +24,6 @@ public interface ZstdCompressor
 
     static ZstdCompressor create()
     {
-        if (ZstdNativeCompressor.isEnabled()) {
-            return new ZstdNativeCompressor();
-        }
-        return new ZstdJavaCompressor();
-    }
-
-    static ZstdCompressor create(int compressionLevel)
-    {
-        if (ZstdNativeCompressor.isEnabled()) {
-            return new ZstdNativeCompressor(compressionLevel);
-        }
-        if (compressionLevel != CompressionParameters.DEFAULT_COMPRESSION_LEVEL) {
-            throw new IllegalArgumentException("Compression level different from default cannot be used for non-native Zstd compressor");
-        }
         return new ZstdJavaCompressor();
     }
 }

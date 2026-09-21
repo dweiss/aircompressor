@@ -27,17 +27,15 @@ public class SnappyHadoopStreams
         implements HadoopStreams
 {
     private static final int DEFAULT_OUTPUT_BUFFER_SIZE = 256 * 1024;
-    private final boolean useNative;
     private final int bufferSize;
 
     public SnappyHadoopStreams()
     {
-        this(true, DEFAULT_OUTPUT_BUFFER_SIZE);
+        this(DEFAULT_OUTPUT_BUFFER_SIZE);
     }
 
-    public SnappyHadoopStreams(boolean useNative, int bufferSize)
+    public SnappyHadoopStreams(int bufferSize)
     {
-        this.useNative = useNative && SnappyNative.isEnabled();
         this.bufferSize = bufferSize;
     }
 
@@ -56,14 +54,14 @@ public class SnappyHadoopStreams
     @Override
     public HadoopInputStream createInputStream(InputStream in)
     {
-        SnappyDecompressor decompressor = useNative ? new SnappyNativeDecompressor() : new SnappyJavaDecompressor();
+        SnappyDecompressor decompressor = new SnappyJavaDecompressor();
         return new SnappyHadoopInputStream(decompressor, in);
     }
 
     @Override
     public HadoopOutputStream createOutputStream(OutputStream out)
     {
-        SnappyCompressor compressor = useNative ? new SnappyNativeCompressor() : new SnappyJavaCompressor();
+        SnappyCompressor compressor = new SnappyJavaCompressor();
         return new SnappyHadoopOutputStream(compressor, out, bufferSize);
     }
 }

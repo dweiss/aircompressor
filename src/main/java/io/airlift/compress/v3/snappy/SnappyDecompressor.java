@@ -17,15 +17,12 @@ import io.airlift.compress.v3.Decompressor;
 
 public sealed interface SnappyDecompressor
         extends Decompressor
-        permits SnappyJavaDecompressor, SnappyNativeDecompressor
+        permits SnappyJavaDecompressor
 {
     int getUncompressedLength(byte[] compressed, int compressedOffset);
 
     static SnappyDecompressor create()
     {
-        if (SnappyNativeDecompressor.isEnabled()) {
-            return new SnappyNativeDecompressor();
-        }
         return new SnappyJavaDecompressor();
     }
 }

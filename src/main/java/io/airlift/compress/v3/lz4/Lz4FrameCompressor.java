@@ -24,9 +24,6 @@ public interface Lz4FrameCompressor
 {
     static Lz4FrameCompressor create()
     {
-        if (Lz4FrameNativeCompressor.isEnabled()) {
-            return new Lz4FrameNativeCompressor();
-        }
         return new Lz4FrameJavaCompressor();
     }
 }

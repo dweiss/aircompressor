@@ -24,9 +24,6 @@ public interface Lz4FrameDecompressor
 {
     static Lz4FrameDecompressor create()
     {
-        if (Lz4FrameNativeDecompressor.isEnabled()) {
-            return new Lz4FrameNativeDecompressor();
-        }
         return new Lz4FrameJavaDecompressor();
     }
 }

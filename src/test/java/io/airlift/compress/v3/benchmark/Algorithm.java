@@ -19,25 +19,17 @@ import io.airlift.compress.v3.HadoopCodecCompressor;
 import io.airlift.compress.v3.HadoopCodecDecompressor;
 import io.airlift.compress.v3.deflate.DeflateJavaCompressor;
 import io.airlift.compress.v3.deflate.DeflateJavaDecompressor;
-import io.airlift.compress.v3.deflate.DeflateNativeCompressor;
-import io.airlift.compress.v3.deflate.DeflateNativeDecompressor;
 import io.airlift.compress.v3.lz4.Lz4Codec;
 import io.airlift.compress.v3.lz4.Lz4FrameJavaCompressor;
 import io.airlift.compress.v3.lz4.Lz4FrameJavaDecompressor;
-import io.airlift.compress.v3.lz4.Lz4FrameNativeCompressor;
-import io.airlift.compress.v3.lz4.Lz4FrameNativeDecompressor;
 import io.airlift.compress.v3.lz4.Lz4JavaCompressor;
 import io.airlift.compress.v3.lz4.Lz4JavaDecompressor;
-import io.airlift.compress.v3.lz4.Lz4NativeCompressor;
-import io.airlift.compress.v3.lz4.Lz4NativeDecompressor;
 import io.airlift.compress.v3.lzo.LzoCodec;
 import io.airlift.compress.v3.lzo.LzoCompressor;
 import io.airlift.compress.v3.lzo.LzoDecompressor;
 import io.airlift.compress.v3.snappy.SnappyCodec;
 import io.airlift.compress.v3.snappy.SnappyJavaCompressor;
 import io.airlift.compress.v3.snappy.SnappyJavaDecompressor;
-import io.airlift.compress.v3.snappy.SnappyNativeCompressor;
-import io.airlift.compress.v3.snappy.SnappyNativeDecompressor;
 import io.airlift.compress.v3.thirdparty.HadoopLzoCompressor;
 import io.airlift.compress.v3.thirdparty.HadoopLzoDecompressor;
 import io.airlift.compress.v3.thirdparty.JPountzLz4Compressor;
@@ -50,8 +42,6 @@ import io.airlift.compress.v3.thirdparty.ZstdJniCompressor;
 import io.airlift.compress.v3.thirdparty.ZstdJniDecompressor;
 import io.airlift.compress.v3.zstd.ZstdJavaCompressor;
 import io.airlift.compress.v3.zstd.ZstdJavaDecompressor;
-import io.airlift.compress.v3.zstd.ZstdNativeCompressor;
-import io.airlift.compress.v3.zstd.ZstdNativeDecompressor;
 import net.jpountz.lz4.LZ4Factory;
 import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
@@ -60,16 +50,11 @@ import org.apache.hadoop.io.compress.CompressionCodec;
 public enum Algorithm
 {
     airlift_lz4(new Lz4JavaDecompressor(), new Lz4JavaCompressor()),
-    airlift_lz4_native(new Lz4NativeDecompressor(), new Lz4NativeCompressor()),
     airlift_lz4_frame(new Lz4FrameJavaDecompressor(), new Lz4FrameJavaCompressor()),
-    airlift_lz4_frame_native(new Lz4FrameNativeDecompressor(), new Lz4FrameNativeCompressor()),
     airlift_snappy(new SnappyJavaDecompressor(), new SnappyJavaCompressor()),
-    airlift_snappy_native(new SnappyNativeDecompressor(), new SnappyNativeCompressor()),
     airlift_lzo(new LzoDecompressor(), new LzoCompressor()),
     airlift_zstd(new ZstdJavaDecompressor(), new ZstdJavaCompressor()),
-    airlift_zstd_native(new ZstdNativeDecompressor(), new ZstdNativeCompressor()),
     airlift_deflate(new DeflateJavaDecompressor(), new DeflateJavaCompressor()),
-    airlift_deflate_native(new DeflateNativeDecompressor(), new DeflateNativeCompressor()),
 
     airlift_lz4_stream(new Lz4Codec(), new Lz4JavaCompressor()),
     airlift_snappy_stream(new SnappyCodec(), new SnappyJavaCompressor()),

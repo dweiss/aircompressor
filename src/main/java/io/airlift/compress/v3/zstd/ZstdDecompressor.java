@@ -22,9 +22,6 @@ public interface ZstdDecompressor
 
     static ZstdDecompressor create()
     {
-        if (ZstdNativeDecompressor.isEnabled()) {
-            return new ZstdNativeDecompressor();
-        }
         return new ZstdJavaDecompressor();
     }
 }

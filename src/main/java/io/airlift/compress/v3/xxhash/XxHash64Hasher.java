@@ -35,7 +35,7 @@ import java.lang.foreign.MemorySegment;
  */
 public sealed interface XxHash64Hasher
         extends AutoCloseable
-        permits XxHash64JavaHasher, XxHash64NativeHasher
+        permits XxHash64JavaHasher
 {
     long DEFAULT_SEED = 0;
 
@@ -69,9 +69,6 @@ public sealed interface XxHash64Hasher
 
     static long hash(byte[] input, int offset, int length, long seed)
     {
-        if (XxHash64NativeHasher.isEnabled()) {
-            return XxHash64NativeHasher.hash(input, offset, length, seed);
-        }
         return XxHash64JavaHasher.hash(input, offset, length, seed);
     }
 
@@ -82,9 +79,6 @@ public sealed interface XxHash64Hasher
 
     static long hash(MemorySegment input, long seed)
     {
-        if (XxHash64NativeHasher.isEnabled()) {
-            return XxHash64NativeHasher.hash(input, seed);
-        }
         return XxHash64JavaHasher.hash(input, seed);
     }
 
@@ -97,9 +91,6 @@ public sealed interface XxHash64Hasher
 
     static XxHash64Hasher create(long seed)
     {
-        if (XxHash64NativeHasher.isEnabled()) {
-            return new XxHash64NativeHasher(seed);
-        }
         return new XxHash64JavaHasher(seed);
     }
 

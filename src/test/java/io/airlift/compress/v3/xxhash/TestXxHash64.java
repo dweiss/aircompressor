@@ -13,11 +13,7 @@
  */
 package io.airlift.compress.v3.xxhash;
 
-import org.junit.jupiter.api.Test;
-
 import java.lang.foreign.MemorySegment;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class TestXxHash64
         extends AbstractTestXxHash64
@@ -68,38 +64,5 @@ class TestXxHash64
     protected long hash(long value, long seed)
     {
         return XxHash64Hasher.hash(value, seed);
-    }
-
-    // ========== Java vs Native consistency tests ==========
-
-    @Test
-    void testJavaAndNativeProduceSameOneShot()
-    {
-        byte[] data = createSanityBuffer(1024);
-        long javaHash = XxHash64JavaHasher.hash(data, 0, data.length, 0);
-
-        if (XxHash64NativeHasher.isEnabled()) {
-            long nativeHash = XxHash64NativeHasher.hash(data, 0, data.length, 0);
-            assertThat(nativeHash).isEqualTo(javaHash);
-        }
-    }
-
-    @Test
-    void testJavaAndNativeProduceSameStreaming()
-    {
-        byte[] data = createSanityBuffer(1024);
-
-        try (XxHash64JavaHasher javaHasher = new XxHash64JavaHasher(0)) {
-            javaHasher.update(data);
-            long javaHash = javaHasher.digest();
-
-            if (XxHash64NativeHasher.isEnabled()) {
-                try (XxHash64NativeHasher nativeHasher = new XxHash64NativeHasher(0)) {
-                    nativeHasher.update(data);
-                    long nativeHash = nativeHasher.digest();
-                    assertThat(nativeHash).isEqualTo(javaHash);
-                }
-            }
-        }
     }
 }

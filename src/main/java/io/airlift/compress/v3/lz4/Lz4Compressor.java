@@ -17,28 +17,14 @@ import io.airlift.compress.v3.Compressor;
 
 import java.lang.foreign.MemorySegment;
 
-import static io.airlift.compress.v3.lz4.Lz4Native.DEFAULT_ACCELERATION;
-
 public sealed interface Lz4Compressor
         extends Compressor
-        permits Lz4JavaCompressor, Lz4NativeCompressor
+        permits Lz4JavaCompressor
 {
     int compress(MemorySegment input, MemorySegment output);
 
     static Lz4Compressor create()
     {
-        return create(DEFAULT_ACCELERATION);
-    }
-
-    static Lz4Compressor create(int acceleration)
-    {
-        if (Lz4NativeCompressor.isEnabled()) {
-            return new Lz4NativeCompressor(acceleration);
-        }
-
-        if (acceleration != DEFAULT_ACCELERATION) {
-            throw new IllegalArgumentException("Acceleration different from default cannot be used for non-native LZ4 compression");
-        }
         return new Lz4JavaCompressor();
     }
 }

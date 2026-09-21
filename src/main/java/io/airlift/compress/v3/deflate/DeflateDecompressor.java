@@ -20,9 +20,6 @@ public interface DeflateDecompressor
 {
     static DeflateDecompressor create()
     {
-        if (DeflateNativeDecompressor.isEnabled()) {
-            return new DeflateNativeDecompressor();
-        }
         return new DeflateJavaDecompressor();
     }
 }

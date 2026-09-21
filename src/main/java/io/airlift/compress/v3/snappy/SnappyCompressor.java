@@ -19,15 +19,12 @@ import java.lang.foreign.MemorySegment;
 
 public sealed interface SnappyCompressor
         extends Compressor
-        permits SnappyJavaCompressor, SnappyNativeCompressor
+        permits SnappyJavaCompressor
 {
     int compress(MemorySegment input, MemorySegment output);
 
     static SnappyCompressor create()
     {
-        if (SnappyNativeCompressor.isEnabled()) {
-            return new SnappyNativeCompressor();
-        }
         return new SnappyJavaCompressor();
     }
 }

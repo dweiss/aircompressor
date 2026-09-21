@@ -19,15 +19,12 @@ import java.lang.foreign.MemorySegment;
 
 public sealed interface Lz4Decompressor
         extends Decompressor
-        permits Lz4JavaDecompressor, Lz4NativeDecompressor
+        permits Lz4JavaDecompressor
 {
     int decompress(MemorySegment input, MemorySegment output);
 
     static Lz4Decompressor create()
     {
-        if (Lz4NativeDecompressor.isEnabled()) {
-            return new Lz4NativeDecompressor();
-        }
         return new Lz4JavaDecompressor();
     }
 }

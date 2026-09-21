@@ -21,7 +21,7 @@ import java.lang.foreign.MemorySegment;
  * Pure-Java decompressor for the standard LZ4 frame format, delegating per-block decompression to
  * the Java LZ4 block decompressor. Multiple concatenated frames are decoded, and skippable frames
  * are ignored. Only frames with independent blocks and no dictionary are supported (as produced by
- * the Java and native frame compressors); frames using linked blocks or a dictionary are rejected.
+ * {@link Lz4FrameJavaCompressor}); frames using linked blocks or a dictionary are rejected.
  * This class is not thread-safe.
  */
 public final class Lz4FrameJavaDecompressor
