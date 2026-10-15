@@ -25,7 +25,7 @@ class CompressionParameters
     private static final int MIN_HASH_LOG = 6;
 
     public static final int DEFAULT_COMPRESSION_LEVEL = 3;
-    private static final int MAX_COMPRESSION_LEVEL = 22;
+    static final int MAX_COMPRESSION_LEVEL = 22;
 
     private final int windowLog; // largest match distance : larger == more compression, more memory needed during decompression
     private final int windowSize; // computed: 1 << windowLog
@@ -192,6 +192,12 @@ class CompressionParameters
         public BlockCompressor getCompressor()
         {
             return compressor;
+        }
+
+        /** Whether the Java encoder implements this strategy. */
+        public boolean isSupported()
+        {
+            return compressor != BlockCompressor.UNSUPPORTED;
         }
     }
 

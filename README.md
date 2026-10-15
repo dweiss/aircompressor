@@ -22,6 +22,9 @@ without `sun.misc.Unsafe`, JNI or bundled native libraries.
   return the Java implementations. Removed along the way, because they only worked with native code:
   XXHash3, `Lz4Compressor.create(int acceleration)`, `ZstdCompressor.create(int compressionLevel)`
   and the `useNative` argument of `Lz4HadoopStreams` and `SnappyHadoopStreams`.
+* **Zstd stream compression level.** `new ZstdOutputStream(out, level)` selects the compression
+  level of the streaming encoder (upstream always uses level 3); only levels whose strategy is
+  implemented in Java are accepted (3 and 4).
 * **Standalone build.** The `io.airlift:airbase` parent pom is gone; `pom.xml` declares its plugins
   and dependency versions directly and keeps the same checkstyle rules and license header check.
 * **Faster bzip2 decompression**: a bulk bit reader, Huffman lookup tables and a multi-chain
@@ -94,6 +97,9 @@ network transfer.
 Zstandard is provided by the `ZstdJavaCompressor` and `ZstdJavaDecompressor` classes.
 
 The Zstandard streaming format is supported by `ZstdInputStream` and `ZstdOutputStream`.
+`ZstdOutputStream` compresses at level 3 by default; `new ZstdOutputStream(out, level)` selects
+another level. Only levels whose match-finding strategy is implemented in Java are accepted,
+currently the double-fast levels 3 and 4; other levels throw `IllegalArgumentException`.
 
 ## [LZ4](https://lz4.org/)
 LZ4 is an extremely fast compression algorithm that provides compression ratios comparable
