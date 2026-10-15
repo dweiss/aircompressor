@@ -19,8 +19,10 @@ import java.io.OutputStream;
 import java.util.Arrays;
 
 import static io.airlift.compress.v3.zstd.CompressionParameters.DEFAULT_COMPRESSION_LEVEL;
+import static io.airlift.compress.v3.zstd.CompressionParameters.MAX_COMPRESSION_LEVEL;
 import static io.airlift.compress.v3.zstd.Constants.SIZE_OF_BLOCK_HEADER;
 import static io.airlift.compress.v3.zstd.Constants.SIZE_OF_LONG;
+import static io.airlift.compress.v3.zstd.Util.checkArgument;
 import static io.airlift.compress.v3.zstd.Util.checkState;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
@@ -45,11 +47,33 @@ public class ZstdOutputStream
 
     private boolean closed;
 
+    /**
+     * Creates a stream compressing at the {@linkplain CompressionParameters#DEFAULT_COMPRESSION_LEVEL default compression level}.
+     */
     public ZstdOutputStream(OutputStream outputStream)
             throws IOException
     {
+        this(outputStream, DEFAULT_COMPRESSION_LEVEL);
+    }
+
+    /**
+     * Creates a stream compressing at the given compression level.
+     *
+     * @param compressionLevel a level between 1 and {@value CompressionParameters#MAX_COMPRESSION_LEVEL}
+     * (0 selects the default level, {@value CompressionParameters#DEFAULT_COMPRESSION_LEVEL}). Only
+     * levels whose match-finding strategy is implemented by the Java encoder are accepted: currently
+     * the double-fast levels 3 and 4. Other levels throw {@link IllegalArgumentException}.
+     */
+    public ZstdOutputStream(OutputStream outputStream, int compressionLevel)
+            throws IOException
+    {
         this.outputStream = requireNonNull(outputStream, "outputStream is null");
-        this.context = new CompressionContext(CompressionParameters.compute(DEFAULT_COMPRESSION_LEVEL, -1), 0, Integer.MAX_VALUE);
+        checkArgument(compressionLevel >= 0 && compressionLevel <= MAX_COMPRESSION_LEVEL,
+                "compressionLevel must be between 0 and " + MAX_COMPRESSION_LEVEL + ": " + compressionLevel);
+        CompressionParameters parameters = CompressionParameters.compute(compressionLevel, -1);
+        checkArgument(parameters.getStrategy().isSupported(),
+                "compressionLevel " + compressionLevel + " uses the " + parameters.getStrategy() + " strategy, which is not implemented by the Java encoder");
+        this.context = new CompressionContext(parameters, 0, Integer.MAX_VALUE);
         this.maxBufferSize = context.parameters.getWindowSize() * 4;
 
         // create output buffer large enough for a single block
