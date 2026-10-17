@@ -5,7 +5,8 @@
 > unpack or load at runtime. Java packages (`io.airlift.compress.v3`) and the API of the Java
 > implementations are unchanged, so it is a drop-in replacement wherever the Java codecs were used.
 > Its Maven coordinates are `com.carrotsearch.thirdparty.airlift:aircompressor-v3-jdk25`; upstream's
-> `io.airlift:aircompressor-v3` releases do not contain these changes.
+> `io.airlift:aircompressor-v3` releases do not contain these changes. Upstream commits are ported
+> selectively; [UPSTREAM.md](UPSTREAM.md) records the last reviewed upstream commit and the decisions.
 
 This library provides a set of compression algorithms implemented in pure Java.
 The implementations access memory through `byte[]` arrays and `VarHandle` views only,
