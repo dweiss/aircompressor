@@ -24,6 +24,11 @@ without `sun.misc.Unsafe`, JNI or bundled native libraries.
   xxHash `*Native*` classes with them (and XXHash3 and `Lz4Compressor.create(int acceleration)`, which
   only worked natively). For Zstandard the foreign function binding is back, but against the `libzstd`
   installed on the system, used only when present and when native access is enabled; see below.
+* **Optional system `libzstd`.** The system property `io.airlift.compress.v3.zstd.implementation`
+  (`auto`, `java` or `native`) decides whether the installed `libzstd` is used; in the default `auto`
+  mode that also requires `--enable-native-access=io.airlift.compress.v3` (`ALL-UNNAMED` on the class
+  path) on the command line, otherwise the Java implementation is used, silently. The `Implementation`
+  enum makes the same choice per object in code.
 * **No Hadoop integration.** The `CompressionCodec` implementations, the `HadoopStreams`
   factories and the gzip package, which only existed for Hadoop, are gone, and so is the lzop
   (`.lzo` file) reader that was built on them. The library has no dependencies at all.
@@ -226,6 +231,13 @@ try (XxHash32Hasher hasher = XxHash32Hasher.create()) {
 # Requirements
 
 This library requires a Java 25+ virtual machine. It does not use `sun.misc.Unsafe` and does not depend on the platform's byte order.
+
+Everything works without any native library. To let Zstandard use the `libzstd` installed on the system
+(1.4 or newer), start the JVM with `--enable-native-access=io.airlift.compress.v3` (or
+`--enable-native-access=ALL-UNNAMED` when the jar is on the class path); without that flag the JDK would
+warn about the foreign function calls, so the library stays with its Java implementation. The system
+property `io.airlift.compress.v3.zstd.implementation` overrides the choice: `java` never loads the native
+library, `native` always does (and fails if it is missing), `auto` is the default described above.
 
 # Users
 
