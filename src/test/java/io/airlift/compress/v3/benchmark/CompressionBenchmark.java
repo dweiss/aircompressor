@@ -65,18 +65,9 @@ public class CompressionBenchmark
             "jpountz_lz4_jni",
             "jpountz_lz4_safe",
             "jpountz_lz4_unsafe",
-            "hadoop_lzo",
             "zstd_jni",
 
-            "airlift_lz4_stream",
-            "airlift_lzo_stream",
-            "airlift_snappy_stream",
-
-            "hadoop_lz4_stream",
-            "hadoop_lzo_stream",
-            "hadoop_snappy_stream",
             "java_zip_stream",
-            "hadoop_gzip_stream",
     })
     private Algorithm algorithm;
 

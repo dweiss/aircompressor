@@ -177,17 +177,6 @@ class TestBZip2DecoderModes
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new BZip2InputStream(new ByteArrayInputStream(INPUT), true, null, 1))
                 .isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> new BZip2HadoopStreams(EXECUTOR, 0))
-                .isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
-    void testParallelHadoopStreams()
-            throws IOException
-    {
-        try (InputStream in = new BZip2HadoopStreams(EXECUTOR, 4).createInputStream(new ByteArrayInputStream(INPUT))) {
-            assertThat(in.readAllBytes()).isEqualTo(concat(FIRST, SECOND));
-        }
     }
 
     @Test

@@ -212,12 +212,12 @@ class TestBZip2InputStream
     }
 
     @Test
-    void testHadoopStreamsRoundTrip()
+    void testOutputStreamRoundTrip()
             throws IOException
     {
         byte[] data = textLike(new Random(13), 700_000);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        try (var compressor = new BZip2HadoopStreams().createOutputStream(out)) {
+        try (var compressor = new BZip2OutputStream(out)) {
             compressor.write(data, 0, 300_000);
             compressor.write(data, 300_000, data.length - 300_000);
         }
@@ -226,11 +226,11 @@ class TestBZip2InputStream
         assertThat(compressed[1]).isEqualTo((byte) 'Z');
 
         for (int chunkSize : CHUNK_SIZES) {
-            try (InputStream in = new BZip2HadoopStreams().createInputStream(new ByteArrayInputStream(compressed))) {
+            try (InputStream in = new BZip2InputStream(new ByteArrayInputStream(compressed))) {
                 assertThat(readAll(in, chunkSize)).isEqualTo(data);
             }
         }
-        try (InputStream in = new BZip2HadoopStreams().createInputStream(new ByteArrayInputStream(compressed))) {
+        try (InputStream in = new BZip2InputStream(new ByteArrayInputStream(compressed))) {
             assertThat(readByteAtATime(in)).isEqualTo(data);
         }
     }

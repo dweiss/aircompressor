@@ -61,7 +61,6 @@
         <dep.assertj.version>3.27.7</dep.assertj.version>
         <dep.checkstyle.version>13.8.0</dep.checkstyle.version>
         <dep.guava.version>33.6.0-jre</dep.guava.version>
-        <dep.guice.version>7.0.0</dep.guice.version>
         <dep.jmh.version>1.37</dep.jmh.version>
         <dep.junit.version>6.1.2</dep.junit.version>
     </properties>
@@ -71,19 +70,7 @@
             <groupId>at.yawk.lz4</groupId>
             <artifactId>lz4-java</artifactId>
             <version>1.11.1</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.trino.hadoop</groupId>
-            <artifactId>hadoop-apache</artifactId>
-            <version>3.3.5-3</version>
-            <scope>provided</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.lz4</groupId>
-                    <artifactId>lz4-java</artifactId>
-                </exclusion>
-            </exclusions>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.github.luben</groupId>
@@ -98,15 +85,8 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.google.inject</groupId>
-            <artifactId>guice</artifactId>
-            <version>${dep.guice.version}</version>
-            <classifier>classes</classifier>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>org.anarres.lzo</groupId>
-            <artifactId>lzo-hadoop</artifactId>
+            <artifactId>lzo-core</artifactId>
             <version>1.0.6</version>
             <scope>test</scope>
             <exclusions>
@@ -117,10 +97,6 @@
                 <exclusion>
                     <groupId>com.google.code.findbugs</groupId>
                     <artifactId>jsr305</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.apache.hadoop</groupId>
-                    <artifactId>hadoop-core</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>

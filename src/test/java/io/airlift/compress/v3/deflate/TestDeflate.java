@@ -16,7 +16,6 @@ package io.airlift.compress.v3.deflate;
 import io.airlift.compress.v3.AbstractTestCompression;
 import io.airlift.compress.v3.Compressor;
 import io.airlift.compress.v3.Decompressor;
-import io.airlift.compress.v3.HadoopNative;
 import io.airlift.compress.v3.MalformedInputException;
 import io.airlift.compress.v3.lzo.LzoDecompressor;
 import org.junit.jupiter.api.Test;
@@ -29,10 +28,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public class TestDeflate
         extends AbstractTestCompression
 {
-    static {
-        HadoopNative.requireHadoopNative();
-    }
-
     @Override
     protected Compressor getCompressor()
     {

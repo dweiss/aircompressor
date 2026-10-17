@@ -14,21 +14,18 @@
 package io.airlift.compress.v3.thirdparty;
 
 import io.airlift.compress.v3.Compressor;
-import org.anarres.lzo.hadoop.codec.LzoCompressor;
+import org.anarres.lzo.LzoAlgorithm;
+import org.anarres.lzo.LzoLibrary;
+import org.anarres.lzo.LzoTransformer;
+import org.anarres.lzo.lzo_uintp;
 
-import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 
-public class HadoopLzoCompressor
+/** Raw LZO1X blocks from the independent lzo-core implementation, as a reference for the LZO tests. */
+public class AnarresLzoCompressor
         implements Compressor
 {
-    private final org.apache.hadoop.io.compress.Compressor compressor;
-
-    public HadoopLzoCompressor()
-    {
-        // use a small buffer so we get multiple compressed chunks
-        compressor = new LzoCompressor(LzoCompressor.CompressionStrategy.LZO1X_1, 256 * 1024);
-    }
+    private final org.anarres.lzo.LzoCompressor compressor = LzoLibrary.getInstance().newCompressor(LzoAlgorithm.LZO1X, null);
 
     @Override
     public int maxCompressedLength(int uncompressedSize)
@@ -39,26 +36,15 @@ public class HadoopLzoCompressor
     @Override
     public int compress(byte[] input, int inputOffset, int inputLength, byte[] output, int outputOffset, int maxOutputLength)
     {
-        compressor.reset();
-        compressor.setInput(input, inputOffset, inputLength);
-        compressor.finish();
-
-        int offset = outputOffset;
-        int outputLimit = outputOffset + maxOutputLength;
-        while (!compressor.finished() && offset < outputLimit) {
-            try {
-                offset += compressor.compress(output, offset, outputLimit - offset);
-            }
-            catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+        if (inputLength == 0) {
+            return 0; // airlift's LZO (like Hadoop's) has no end marker for empty input; lzo-core emits one
         }
-
-        if (!compressor.finished()) {
-            throw new RuntimeException("not enough space in output buffer");
+        lzo_uintp outputLength = new lzo_uintp(maxOutputLength);
+        int code = compressor.compress(input, inputOffset, inputLength, output, outputOffset, outputLength);
+        if (code != LzoTransformer.LZO_E_OK) {
+            throw new RuntimeException("LZO compression failed: " + compressor.toErrorString(code));
         }
-
-        return offset - outputOffset;
+        return outputLength.value;
     }
 
     @Override
