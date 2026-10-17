@@ -13,10 +13,10 @@
  */
 package io.airlift.compress.v3.zstd;
 
-import com.google.common.io.Resources;
 import io.airlift.compress.v3.Compressor;
 import io.airlift.compress.v3.Decompressor;
 import io.airlift.compress.v3.MalformedInputException;
+import io.airlift.compress.v3.TestResources;
 
 import java.io.IOException;
 
@@ -59,7 +59,7 @@ class TestZstdPartial
     public void testInvalidSequenceOffset()
             throws IOException
     {
-        byte[] compressed = Resources.toByteArray(Resources.getResource("test-data/zstd/offset-before-start.zst"));
+        byte[] compressed = TestResources.read("data/zstd/offset-before-start.zst");
         byte[] output = new byte[compressed.length * 10];
 
         assertThatThrownBy(() -> getDecompressor().decompress(compressed, 0, compressed.length, output, 0, output.length))
