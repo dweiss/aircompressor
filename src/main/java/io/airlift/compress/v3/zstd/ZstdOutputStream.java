@@ -22,7 +22,6 @@ import static io.airlift.compress.v3.zstd.CompressionParameters.DEFAULT_COMPRESS
 import static io.airlift.compress.v3.zstd.Constants.SIZE_OF_BLOCK_HEADER;
 import static io.airlift.compress.v3.zstd.Constants.SIZE_OF_LONG;
 import static io.airlift.compress.v3.zstd.Util.checkState;
-import static io.airlift.compress.v3.zstd.Util.cycleLog;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.util.Objects.requireNonNull;
@@ -73,9 +72,7 @@ public class ZstdOutputStream
         CompressionParameters parameters = CompressionParameters.compute(compressionLevel, -1);
         this.context = new CompressionContext(parameters, 0, Integer.MAX_VALUE);
         this.maxBufferSize = parameters.getWindowSize() * 4;
-        // The hash chain table is indexed by position modulo its size, so sliding the window must
-        // keep positions congruent modulo that size (zstd: ZSTD_window_correctOverflow).
-        this.slideAlignment = 1 << cycleLog(parameters.getChainLog(), parameters.getStrategy());
+        this.slideAlignment = parameters.getSlideAlignment();
         checkState(slideAlignment <= parameters.getWindowSize(), "chain table larger than the window");
 
         // create output buffer large enough for a single block

@@ -30,7 +30,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Checks the Java encoder against the {@code zstd} command line tool: its output must decompress with the
- * tool, and be about as small as the tool's output at the same level with the same (hash chain) match finder.
+ * tool, and be about as small as the tool's output at the same level with the same match finder (the tool's
+ * default choice, which the Java encoder mirrors, and the hash chain one forced on both sides).
  * Runs only when the tool is installed; {@code -Dzstd.cli=/path/to/zstd} points at a specific binary.
  */
 @EnabledIf("isZstdAvailable")
@@ -71,22 +72,32 @@ class TestZstdCli
         List<DynamicTest> tests = new ArrayList<>();
         for (String file : FILES) {
             for (int level : LEVELS) {
-                tests.add(DynamicTest.dynamicTest(file + " level " + level, () -> compareWithCli(file, level)));
+                tests.add(DynamicTest.dynamicTest(file + " level " + level, () -> compareWithCli(file, level, null)));
+                if (level >= 5) {
+                    tests.add(DynamicTest.dynamicTest(file + " level " + level + " hash chain", () -> compareWithCli(file, level, false)));
+                }
             }
         }
         return tests;
     }
 
-    private void compareWithCli(String file, int level)
+    /**
+     * @param rowMatchFinder the match finder to force on both sides for the greedy/lazy levels, or null for
+     * zstd's automatic choice
+     */
+    private void compareWithCli(String file, int level, Boolean rowMatchFinder)
             throws Exception
     {
         Path inputFile = Path.of("testdata", file);
         byte[] input = Files.readAllBytes(inputFile);
 
-        byte[] oneShot = TestZstdCompressionLevels.compressOneShot(input, level);
+        byte[] oneShot = rowMatchFinder == null
+                ? TestZstdCompressionLevels.compressOneShot(input, level)
+                : TestZstdCompressionLevels.compressOneShot(input, level, rowMatchFinder);
         byte[] streamed = TestZstdCompressionLevels.compressStream(input, level);
+        String finderOption = rowMatchFinder == null ? "--single-thread" : (rowMatchFinder ? "--row-match-finder" : "--no-row-match-finder");
 
-        String name = file.replace('/', '_') + "." + level;
+        String name = file.replace('/', '_') + "." + level + "." + finderOption.replace("--", "");
         Path oneShotFile = tempDir.resolve(name + ".oneshot.zst");
         Path streamedFile = tempDir.resolve(name + ".stream.zst");
         Files.write(oneShotFile, oneShot);
@@ -102,9 +113,9 @@ class TestZstdCli
 
         // and the size must be about the same as the CLI's, using the same match finder as the Java port
         Path cliFile = tempDir.resolve(name + ".cli.zst");
-        run(zstdBinary(), "-" + level, "--no-row-match-finder", "--single-thread", "-q", "-f", "-o", cliFile.toString(), inputFile.toString());
+        run(zstdBinary(), "-" + level, finderOption, "--single-thread", "-q", "-f", "-o", cliFile.toString(), inputFile.toString());
         long cliSize = Files.size(cliFile);
-        String description = String.format(Locale.ROOT, "%s at level %d: java %d (stream %d) vs cli %d (%+.2f%%)", file, level, oneShot.length, streamed.length, cliSize, 100.0 * (oneShot.length - cliSize) / cliSize);
+        String description = String.format(Locale.ROOT, "%s at level %d %s: java %d (stream %d) vs cli %d (%+.2f%%)", file, level, finderOption, oneShot.length, streamed.length, cliSize, 100.0 * (oneShot.length - cliSize) / cliSize);
         System.out.println(description);
         assertThat((long) oneShot.length)
                 .as(description)

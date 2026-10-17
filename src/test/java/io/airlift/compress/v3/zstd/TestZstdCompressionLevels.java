@@ -77,6 +77,28 @@ class TestZstdCompressionLevels
         return tests;
     }
 
+    /**
+     * zstd picks the row hash match finder for all but the smallest windows; the hash chain finder is then
+     * only exercised by tiny inputs. Force it on larger ones too.
+     */
+    @TestFactory
+    List<DynamicTest> testOneShotHashChain()
+            throws IOException
+    {
+        List<DynamicTest> tests = new ArrayList<>();
+        for (String file : new String[] {"silesia/dickens", "silesia/x-ray", "canterbury/alice29.txt"}) {
+            byte[] input = Files.readAllBytes(Path.of("testdata", file));
+            for (int level : LEVELS) {
+                tests.add(DynamicTest.dynamicTest(file + " level " + level, () -> {
+                    byte[] compressed = compressOneShot(input, level, false);
+                    verifyRoundTrip(input, compressed);
+                    verifySizeAgainstNative(file + " (hash chain)", input, level, compressed.length);
+                }));
+            }
+        }
+        return tests;
+    }
+
     @TestFactory
     List<DynamicTest> testStream()
             throws IOException
@@ -192,6 +214,42 @@ class TestZstdCompressionLevels
         byte[] output = new byte[compressor.maxCompressedLength(input.length)];
         int size = compressor.compress(input, 0, input.length, output, 0, output.length);
         return java.util.Arrays.copyOf(output, size);
+    }
+
+    /** One-shot compression with the given match finder for the greedy/lazy parser. */
+    static byte[] compressOneShot(byte[] input, int level, boolean rowMatchFinder)
+    {
+        CompressionParameters parameters = CompressionParameters.compute(level, input.length).withRowMatchFinder(rowMatchFinder);
+        byte[] output = new byte[new ZstdJavaCompressor().maxCompressedLength(input.length)];
+        int size = ZstdFrameCompressor.compress(input, 0, input.length, output, 0, output.length, parameters);
+        return java.util.Arrays.copyOf(output, size);
+    }
+
+    @Test
+    void testRowMatchMask()
+    {
+        java.util.Random random = new java.util.Random(0);
+        for (int rowEntries : new int[] {16, 32, 64}) {
+            byte[] tagTable = new byte[4 * rowEntries];
+            for (int iteration = 0; iteration < 2000; iteration++) {
+                // few distinct values, so that rows contain several copies of the tag
+                for (int i = 0; i < tagTable.length; i++) {
+                    tagTable[i] = (byte) random.nextInt(4);
+                }
+                int row = rowEntries * random.nextInt(4);
+                int tag = random.nextInt(4);
+                int head = random.nextInt(rowEntries);
+                long expected = 0;
+                for (int i = 0; i < rowEntries; i++) {
+                    if ((tagTable[row + ((head + i) & (rowEntries - 1))] & 0xFF) == tag) {
+                        expected |= 1L << i;
+                    }
+                }
+                assertThat(LazyBlockCompressor.rowMatchMask(tagTable, row, tag, head, rowEntries))
+                        .as("%s entries, head %s, tag %s", rowEntries, head, tag)
+                        .isEqualTo(expected);
+            }
+        }
     }
 
     static byte[] compressStream(byte[] input, int level)

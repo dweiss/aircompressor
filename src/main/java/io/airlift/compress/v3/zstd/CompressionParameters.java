@@ -37,6 +37,8 @@ class CompressionParameters
     private final int searchLength; // match length searched : larger == faster decompression, sometimes less compression
     private final int targetLength; // acceptable match size for optimal parser (only) : larger == more compression, slower
     private final Strategy strategy;
+    private final boolean rowMatchFinder; // greedy/lazy strategies: row hash (true) or hash chain (false) match finder
+    private final BlockCompressor blockCompressor;
 
     private static final CompressionParameters[][] DEFAULT_COMPRESSION_PARAMETERS = new CompressionParameters[][] {
             {
@@ -159,15 +161,15 @@ class CompressionParameters
         // YC: greedy uses a hash chain strategy. Every position is hashed, and all positions with same hash are chained. The algorithm goes through all candidates. There are
         // diminishing returns in going deeper and deeper, so after a nb of attempts (which can be selected), it abandons the search. The best (longest) match wins. If there is
         // one winner, it's immediately encoded.
-        GREEDY(new LazyBlockCompressor(0)),
+        GREEDY(LazyBlockCompressor.hashChain(0)),
 
         // YC: lazy will do something similar to greedy, but will not encode immediately. It will search again at next position, in case it would find something better.
         // It's actually fairly common to have a small match at position p hiding a more worthy one at position p+1. This obviously increases the search workload. But the
         // resulting compressed stream generally contains larger matches, hence compresses better.
-        LAZY(new LazyBlockCompressor(1)),
+        LAZY(LazyBlockCompressor.hashChain(1)),
 
         // YC: lazy2 is same as lazy, but deeper. It will search at P, P+1 and then P+2 in case it would find something even better. More workload. Better matches.
-        LAZY2(new LazyBlockCompressor(2)),
+        LAZY2(LazyBlockCompressor.hashChain(2)),
 
         // YC: btlazy2 is like lazy2, but trades the hash chain for a binary tree. This becomes necessary, as the nb of attempts becomes prohibitively expensive. The binary tree
         // complexity increases with log of search depth, instead of proportionally with search depth. So searching deeper in history quickly becomes the dominant operation.
@@ -209,10 +211,30 @@ class CompressionParameters
         {
             return ordinal() >= BTLAZY2.ordinal();
         }
+
+        /** Whether the strategy can use the row hash match finder instead of hash chains (zstd: ZSTD_rowMatchFinderSupported). */
+        public boolean supportsRowMatchFinder()
+        {
+            return this == GREEDY || this == LAZY || this == LAZY2;
+        }
     }
 
     public CompressionParameters(int windowLog, int chainLog, int hashLog, int searchLog, int searchLength, int targetLength, Strategy strategy)
     {
+        // zstd's automatic choice (ZSTD_resolveRowMatchFinderMode): rows for all but the smallest windows
+        this(windowLog, chainLog, hashLog, searchLog, searchLength, targetLength, strategy, strategy.supportsRowMatchFinder() && windowLog > 14);
+    }
+
+    CompressionParameters(int windowLog, int chainLog, int hashLog, int searchLog, int searchLength, int targetLength, Strategy strategy, boolean rowMatchFinder)
+    {
+        checkArgument(!rowMatchFinder || strategy.supportsRowMatchFinder(), "strategy does not support the row match finder: " + strategy);
+        if (rowMatchFinder) {
+            // the row hash (row index plus 8 tag bits) must fit in 32 bits
+            int rowLog = clamp(searchLog, LazyBlockCompressor.MIN_ROW_LOG, LazyBlockCompressor.MAX_ROW_LOG);
+            hashLog = Math.min(hashLog, (32 - LazyBlockCompressor.ROW_HASH_TAG_BITS) + rowLog);
+        }
+        this.rowMatchFinder = rowMatchFinder;
+        this.blockCompressor = rowMatchFinder ? LazyBlockCompressor.rowHash(strategy) : strategy.getCompressor();
         this.windowLog = windowLog;
         this.windowSize = 1 << windowLog;
         this.blockSize = Math.min(MAX_BLOCK_SIZE, windowSize);
@@ -267,6 +289,39 @@ class CompressionParameters
     public Strategy getStrategy()
     {
         return strategy;
+    }
+
+    /** The match finder and parser for these parameters. */
+    public BlockCompressor getBlockCompressor()
+    {
+        return blockCompressor;
+    }
+
+    /** Whether the greedy/lazy parser uses the row hash match finder (otherwise hash chains). */
+    public boolean usesRowMatchFinder()
+    {
+        return rowMatchFinder;
+    }
+
+    /** Whether the match finder needs the chain table (zstd: ZSTD_allocateChainTable). */
+    public boolean usesChainTable()
+    {
+        return strategy != Strategy.FAST && !rowMatchFinder;
+    }
+
+    /**
+     * Sliding the window must keep positions congruent modulo the chain table size, because that table
+     * is indexed by position (zstd: ZSTD_window_correctOverflow). Other match finders have no such need.
+     */
+    public int getSlideAlignment()
+    {
+        return usesChainTable() ? 1 << cycleLog(chainLog, strategy) : 1;
+    }
+
+    /** These parameters with the other match finder of the greedy/lazy parser (for tests). */
+    CompressionParameters withRowMatchFinder(boolean rowMatchFinder)
+    {
+        return new CompressionParameters(windowLog, chainLog, hashLog, searchLog, searchLength, targetLength, strategy, rowMatchFinder);
     }
 
     public static CompressionParameters compute(int compressionLevel, int estimatedInputSize)

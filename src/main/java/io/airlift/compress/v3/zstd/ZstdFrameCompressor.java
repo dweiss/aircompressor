@@ -133,9 +133,14 @@ final class ZstdFrameCompressor
 
     public static int compress(byte[] inputBase, int inputAddress, int inputLimit, byte[] outputBase, int outputAddress, int outputLimit, int compressionLevel)
     {
-        int inputSize = inputLimit - inputAddress;
+        CompressionParameters parameters = CompressionParameters.compute(compressionLevel, inputLimit - inputAddress);
+        return compress(inputBase, inputAddress, inputLimit, outputBase, outputAddress, outputLimit, parameters);
+    }
 
-        CompressionParameters parameters = CompressionParameters.compute(compressionLevel, inputSize);
+    // visible for testing
+    static int compress(byte[] inputBase, int inputAddress, int inputLimit, byte[] outputBase, int outputAddress, int outputLimit, CompressionParameters parameters)
+    {
+        int inputSize = inputLimit - inputAddress;
 
         int output = outputAddress;
 
@@ -212,8 +217,7 @@ final class ZstdFrameCompressor
         context.blockCompressionState.enforceMaxDistance(inputAddress + inputSize, parameters.getWindowSize());
         context.sequenceStore.reset();
 
-        int lastLiteralsSize = parameters.getStrategy()
-                .getCompressor()
+        int lastLiteralsSize = parameters.getBlockCompressor()
                 .compressBlock(inputBase, inputAddress, inputSize, context.sequenceStore, context.blockCompressionState, context.offsets, parameters);
 
         int lastLiteralsAddress = inputAddress + inputSize - lastLiteralsSize;
