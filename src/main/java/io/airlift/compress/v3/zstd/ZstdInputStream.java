@@ -13,139 +13,78 @@
  */
 package io.airlift.compress.v3.zstd;
 
+import io.airlift.compress.v3.Implementation;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Arrays;
 
-import static io.airlift.compress.v3.zstd.Util.checkPositionIndexes;
-import static io.airlift.compress.v3.zstd.Util.checkState;
-import static java.lang.Math.max;
 import static java.util.Objects.requireNonNull;
 
+/**
+ * Decompresses the Zstandard frame format (including concatenated frames), with the Java decoder or the
+ * system's native library.
+ * <p>
+ * Which one is decided per stream, by the {@link Implementation} argument and the
+ * {@code io.airlift.compress.v3.zstd.implementation} system property; see {@link ZstdCompressor#create()}.
+ */
 public class ZstdInputStream
         extends InputStream
 {
-    private static final int MIN_BUFFER_SIZE = 4096;
+    private final InputStream delegate;
+    private final boolean nativeImplementation;
 
-    private final InputStream inputStream;
-    private final ZstdIncrementalFrameDecompressor decompressor = new ZstdIncrementalFrameDecompressor();
-
-    private byte[] inputBuffer = new byte[decompressor.getInputRequired()];
-    private int inputBufferOffset;
-    private int inputBufferLimit;
-
-    private byte[] singleByteOutputBuffer;
-
-    private boolean closed;
-
+    /** Creates a stream using the native library if available ({@link Implementation#AUTO}). */
     public ZstdInputStream(InputStream inputStream)
     {
-        this.inputStream = requireNonNull(inputStream, "inputStream is null");
+        this(inputStream, Implementation.AUTO);
+    }
+
+    /**
+     * Creates a stream using the given implementation.
+     *
+     * @throws IllegalStateException for {@link Implementation#NATIVE} when the native library cannot be used
+     */
+    public ZstdInputStream(InputStream inputStream, Implementation implementation)
+    {
+        requireNonNull(inputStream, "inputStream is null");
+        requireNonNull(implementation, "implementation is null");
+        this.nativeImplementation = ZstdNative.useNative(implementation);
+        this.delegate = nativeImplementation
+                ? new ZstdNativeInputStream(inputStream)
+                : new ZstdJavaInputStream(inputStream);
+    }
+
+    /** Whether this stream decompresses with the native library. */
+    public boolean isNative()
+    {
+        return nativeImplementation;
     }
 
     @Override
     public int read()
             throws IOException
     {
-        if (singleByteOutputBuffer == null) {
-            singleByteOutputBuffer = new byte[1];
-        }
-        int readSize = read(singleByteOutputBuffer, 0, 1);
-        checkState(readSize != 0, "A zero read size should never be returned");
-        if (readSize != 1) {
-            return -1;
-        }
-        return singleByteOutputBuffer[0] & 0xFF;
+        return delegate.read();
     }
 
     @Override
-    public int read(final byte[] outputBuffer, final int outputOffset, final int outputLength)
+    public int read(byte[] buffer, int offset, int length)
             throws IOException
     {
-        if (closed) {
-            throw new IOException("Stream is closed");
-        }
-
-        if (outputBuffer == null) {
-            throw new NullPointerException();
-        }
-        checkPositionIndexes(outputOffset, outputOffset + outputLength, outputBuffer.length);
-        if (outputLength == 0) {
-            return 0;
-        }
-
-        final int outputLimit = outputOffset + outputLength;
-        int outputUsed = 0;
-        while (outputUsed < outputLength) {
-            boolean enoughInput = fillInputBufferIfNecessary(decompressor.getInputRequired());
-            if (!enoughInput) {
-                if (decompressor.isAtStoppingPoint()) {
-                    return outputUsed > 0 ? outputUsed : -1;
-                }
-                throw new IOException("Not enough input bytes");
-            }
-
-            decompressor.partialDecompress(
-                    inputBuffer,
-                    inputBufferOffset,
-                    inputBufferLimit,
-                    outputBuffer,
-                    outputOffset + outputUsed,
-                    outputLimit);
-
-            inputBufferOffset += decompressor.getInputConsumed();
-            outputUsed += decompressor.getOutputBufferUsed();
-        }
-        return outputUsed;
-    }
-
-    private boolean fillInputBufferIfNecessary(int requiredSize)
-            throws IOException
-    {
-        if (inputBufferLimit - inputBufferOffset >= requiredSize) {
-            return true;
-        }
-
-        // compact existing buffered data to the front of the buffer
-        if (inputBufferOffset > 0) {
-            int copySize = inputBufferLimit - inputBufferOffset;
-            System.arraycopy(inputBuffer, inputBufferOffset, inputBuffer, 0, copySize);
-            inputBufferOffset = 0;
-            inputBufferLimit = copySize;
-        }
-
-        if (inputBuffer.length < requiredSize) {
-            inputBuffer = Arrays.copyOf(inputBuffer, max(requiredSize, MIN_BUFFER_SIZE));
-        }
-
-        while (inputBufferLimit < inputBuffer.length) {
-            int readSize = inputStream.read(inputBuffer, inputBufferLimit, inputBuffer.length - inputBufferLimit);
-            if (readSize < 0) {
-                break;
-            }
-            inputBufferLimit += readSize;
-        }
-        return inputBufferLimit >= requiredSize;
+        return delegate.read(buffer, offset, length);
     }
 
     @Override
     public int available()
             throws IOException
     {
-        if (closed) {
-            return 0;
-        }
-        return decompressor.getRequestedOutputSize();
+        return delegate.available();
     }
 
     @Override
     public void close()
             throws IOException
     {
-        if (!closed) {
-            closed = true;
-            inputStream.close();
-        }
+        delegate.close();
     }
 }

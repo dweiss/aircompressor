@@ -1,8 +1,10 @@
 # Compression for Java
 
 > **This is a fork of [airlift/aircompressor](https://github.com/airlift/aircompressor).**
-> It turns the library into a pure-Java module: no `sun.misc.Unsafe`, no native code, nothing to
-> unpack or load at runtime, and no dependencies. The Hadoop integration is gone (the
+> It turns the library into a pure-Java module: no `sun.misc.Unsafe`, no bundled native code, nothing
+> to unpack or load at runtime, and no dependencies. Zstandard can optionally use the `libzstd`
+> installed on the system, through the foreign function API, when native access is enabled; everything
+> works without it. The Hadoop integration is gone (the
 > `CompressionCodec` implementations and the `HadoopStreams` factories), so this is **not a drop-in
 > replacement** for code that used those. The Java packages (`io.airlift.compress.v3`) and the API of
 > the plain Java compressors, decompressors and streams are unchanged.
@@ -19,11 +21,16 @@ without `sun.misc.Unsafe`, JNI or bundled native libraries.
 * **No `sun.misc.Unsafe`.** Zstd, LZ4, Snappy and LZO access memory through `byte[]` arrays and
   `VarHandle` views only, with follow-up tuning of each codec to win back the speed lost to
   bounds-checked access.
-* **No native code.** The `java.lang.foreign` bindings (`*Native*` classes), the bundled shared
-  libraries and their loader are gone, together with the `aircompressor.tmpdir` and
-  `io.airlift.compress.v3.disable-native` system properties. The `create()` factories always
-  return the Java implementations. Removed along the way, because they only worked with native code:
-  XXHash3, `Lz4Compressor.create(int acceleration)` and `ZstdCompressor.create(int compressionLevel)`.
+* **No bundled native code.** Upstream's shared libraries, their loader and the `aircompressor.tmpdir`
+  and `io.airlift.compress.v3.disable-native` system properties are gone; the LZ4, Snappy, Deflate and
+  xxHash `*Native*` classes with them (and XXHash3 and `Lz4Compressor.create(int acceleration)`, which
+  only worked natively). For Zstandard the foreign function binding is back, but against the `libzstd`
+  installed on the system, used only when present and when native access is enabled; see below.
+* **Optional system `libzstd`.** The system property `io.airlift.compress.v3.zstd.implementation`
+  (`auto`, `java` or `native`) decides whether the installed `libzstd` is used; in the default `auto`
+  mode that also requires `--enable-native-access=io.airlift.compress.v3` (`ALL-UNNAMED` on the class
+  path) on the command line, otherwise the Java implementation is used, silently. The `Implementation`
+  enum makes the same choice per object in code.
 * **No Hadoop integration.** The `CompressionCodec` implementations, the `HadoopStreams`
   factories and the gzip package, which only existed for Hadoop, are gone, and so is the lzop
   (`.lzo` file) reader that was built on them. The library has no dependencies at all.
@@ -104,16 +111,45 @@ superior compression and performance at all levels compared to zlib. Zstandard i
 an excellent choice for most use cases, especially storage and bandwidth constrained
 network transfer.
 
-Zstandard is provided by the `ZstdJavaCompressor` and `ZstdJavaDecompressor` classes.
+Zstandard is provided by the `ZstdJavaCompressor` and `ZstdJavaDecompressor` classes, and by
+`ZstdNativeCompressor` and `ZstdNativeDecompressor`, which call the `libzstd` installed on the system
+through the foreign function API (nothing is bundled, nothing is written to disk). `ZstdCompressor.create()`,
+`ZstdCompressor.create(level)` and `ZstdDecompressor.create()` return the native implementation when it is
+available and the Java one otherwise; the check happens once, when the classes initialize. The system
+property `io.airlift.compress.v3.zstd.implementation` controls it:
+
+* `auto` (default): native when `libzstd` 1.4 or newer is found (`libzstd.so.1`, `libzstd.1.dylib` or
+  `libzstd.dll`, or the file named by `io.airlift.compress.v3.zstd.implementation.library`) **and** native
+  access is enabled for the module: run with `--enable-native-access=io.airlift.compress.v3`
+  (`ALL-UNNAMED` on the class path). Without that flag the JDK would print a warning on the first
+  foreign call, which a library should not cause on its own, so Java is used instead, silently.
+* `java`: never load the native library.
+* `native`: always use it; `create()` and the native constructors throw `IllegalStateException` when
+  it cannot be loaded, and the JDK prints its warning if native access is not enabled.
+
+The choice can also be made in code, per object, with the `Implementation` enum (`AUTO`, `NATIVE`,
+`JAVA`): `ZstdCompressor.create(Implementation)`, `ZstdCompressor.create(level, Implementation)`,
+`ZstdDecompressor.create(Implementation)`, `new ZstdOutputStream(out, level, Implementation)` and
+`new ZstdInputStream(in, Implementation)`. `NATIVE` throws `IllegalStateException` when the library
+cannot be used; the property still has the last word in that it decides whether the library is loaded
+at all (`java` vetoes it, `auto` requires native access). Which implementation this JVM ended up with,
+and why, is logged once at `FINE` (`System.Logger` level `DEBUG`) under the logger
+`io.airlift.compress.v3.zstd.ZstdNative`.
+
+The native implementation covers one-shot compression and decompression (every zstd level, byte arrays
+and memory segments) and the streams (`ZstdOutputStream` writes through the native streaming API
+without buffering the input, `ZstdInputStream` decompresses straight into the caller's buffer). Both
+implementations report invalid input as `MalformedInputException`.
 
 The Zstandard streaming format is supported by `ZstdInputStream` and `ZstdOutputStream`.
 Both compress at level 3 by default; `new ZstdJavaCompressor(level)` and
-`new ZstdOutputStream(out, level)` select another level. Only levels whose match-finding strategy is
-implemented in Java are accepted: the double-fast levels 3 and 4 and the greedy and lazy levels 5
+`new ZstdOutputStream(out, level)` select another level. The Java encoder accepts only levels whose
+match-finding strategy it implements: the double-fast levels 3 and 4 and the greedy and lazy levels 5
 to 12 (the level table, the parsers and the choice between the row hash and the hash chain match
-finder follow zstd 1.5.7). Other levels throw `IllegalArgumentException`. For inputs of 256 KB and
-less, zstd assigns binary tree strategies to some of the levels 9 to 12; those use the lazy2 parser
-instead and compress slightly less than the C library would.
+finder follow zstd 1.5.7). Other levels throw `IllegalArgumentException` unless the native library is
+in use, which accepts every level. For inputs of 256 KB and less, zstd assigns binary tree strategies
+to some of the levels 9 to 12; the Java encoder uses the lazy2 parser for those and compresses slightly
+less than the C library would.
 
 ## [LZ4](https://lz4.org/)
 LZ4 is an extremely fast compression algorithm that provides compression ratios comparable
@@ -197,6 +233,13 @@ try (XxHash32Hasher hasher = XxHash32Hasher.create()) {
 # Requirements
 
 This library requires a Java 25+ virtual machine. It does not use `sun.misc.Unsafe` and does not depend on the platform's byte order.
+
+Everything works without any native library. To let Zstandard use the `libzstd` installed on the system
+(1.4 or newer), start the JVM with `--enable-native-access=io.airlift.compress.v3` (or
+`--enable-native-access=ALL-UNNAMED` when the jar is on the class path); without that flag the JDK would
+warn about the foreign function calls, so the library stays with its Java implementation. The system
+property `io.airlift.compress.v3.zstd.implementation` overrides the choice: `java` never loads the native
+library, `native` always does (and fails if it is missing), `auto` is the default described above.
 
 # Users
 

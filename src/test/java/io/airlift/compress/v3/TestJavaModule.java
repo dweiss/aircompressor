@@ -52,22 +52,24 @@ class TestJavaModule
 
         assertThat(descriptor.isAutomatic()).isFalse();
 
-        // every package is exported, unconditionally, and none is open to reflection
+        // every API package is exported, unconditionally, and none is open to reflection
         assertThat(descriptor.isOpen()).isFalse();
         assertThat(descriptor.opens()).isEmpty();
         assertThat(descriptor.exports())
                 .allSatisfy(export -> assertThat(export.isQualified()).isFalse())
                 .extracting(Exports::source)
-                .containsExactlyInAnyOrderElementsOf(descriptor.packages());
-        assertThat(descriptor.packages()).containsExactlyInAnyOrder(
-                "io.airlift.compress.v3",
-                "io.airlift.compress.v3.bzip2",
-                "io.airlift.compress.v3.deflate",
-                "io.airlift.compress.v3.lz4",
-                "io.airlift.compress.v3.lzo",
-                "io.airlift.compress.v3.snappy",
-                "io.airlift.compress.v3.xxhash",
-                "io.airlift.compress.v3.zstd");
+                .containsExactlyInAnyOrder(
+                        "io.airlift.compress.v3",
+                        "io.airlift.compress.v3.bzip2",
+                        "io.airlift.compress.v3.deflate",
+                        "io.airlift.compress.v3.lz4",
+                        "io.airlift.compress.v3.lzo",
+                        "io.airlift.compress.v3.snappy",
+                        "io.airlift.compress.v3.xxhash",
+                        "io.airlift.compress.v3.zstd");
+        // the foreign function plumbing stays internal
+        assertThat(descriptor.packages()).containsExactlyInAnyOrderElementsOf(
+                java.util.stream.Stream.concat(descriptor.exports().stream().map(Exports::source), java.util.stream.Stream.of("io.airlift.compress.v3.internal")).toList());
 
         // no dependencies at all
         assertThat(descriptor.requires())
