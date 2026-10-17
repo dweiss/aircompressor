@@ -23,7 +23,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-// Invalid input must be reported as MalformedInputException, so callers can rely on it (upstream also checks the native decompressor here)
+// The Java and native decompressors must report invalid input the same way, so callers can rely on MalformedInputException
 class TestZstdMalformedInput
 {
     private static final byte[] UNCOMPRESSED = new byte[1000];
@@ -116,6 +116,9 @@ class TestZstdMalformedInput
 
     private static List<ZstdDecompressor> decompressors()
     {
+        if (ZstdNativeDecompressor.isEnabled()) {
+            return List.of(new ZstdJavaDecompressor(), new ZstdNativeDecompressor());
+        }
         return List.of(new ZstdJavaDecompressor());
     }
 

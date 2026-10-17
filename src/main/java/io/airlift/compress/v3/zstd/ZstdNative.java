@@ -1,0 +1,502 @@
+/*
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.airlift.compress.v3.zstd;
+
+import io.airlift.compress.v3.Implementation;
+import io.airlift.compress.v3.MalformedInputException;
+import io.airlift.compress.v3.internal.NativeLoader;
+import io.airlift.compress.v3.internal.NativeSignature;
+
+import java.lang.foreign.MemorySegment;
+import java.lang.System.Logger;
+import java.lang.invoke.MethodHandle;
+import java.util.List;
+import java.util.Optional;
+
+import static java.lang.Long.compareUnsigned;
+import static java.lang.invoke.MethodHandles.lookup;
+
+/**
+ * The system's {@code libzstd} through the foreign function API; see {@link NativeLoader} for how it is found
+ * and when it is used. The check happens once, when this class initializes.
+ */
+final class ZstdNative
+{
+    /** System property selecting {@code auto} (default), {@code java} or {@code native}. */
+    public static final String IMPLEMENTATION_PROPERTY = "io.airlift.compress.v3.zstd.implementation";
+
+    /** The oldest libzstd accepted: 1.4.0, which introduced the functions used here with their current contracts. */
+    private static final int MIN_VERSION = 10400;
+
+    private record MethodHandles(
+            @NativeSignature(name = "ZSTD_compressBound", returnType = long.class, argumentTypes = long.class)
+            MethodHandle maxCompressedLength,
+            @NativeSignature(name = "ZSTD_compress", returnType = long.class, argumentTypes = {MemorySegment.class, long.class, MemorySegment.class, long.class, int.class})
+            MethodHandle compress,
+            @NativeSignature(name = "ZSTD_decompress", returnType = long.class, argumentTypes = {MemorySegment.class, long.class, MemorySegment.class, long.class})
+            MethodHandle decompress,
+            @NativeSignature(name = "ZSTD_getFrameContentSize", returnType = long.class, argumentTypes = {MemorySegment.class, long.class})
+            MethodHandle uncompressedLength,
+            @NativeSignature(name = "ZSTD_isError", returnType = int.class, argumentTypes = long.class)
+            MethodHandle isError,
+            @NativeSignature(name = "ZSTD_getErrorCode", returnType = int.class, argumentTypes = long.class)
+            MethodHandle getErrorCode,
+            @NativeSignature(name = "ZSTD_getErrorName", returnType = MemorySegment.class, argumentTypes = long.class)
+            MethodHandle getErrorName,
+            @NativeSignature(name = "ZSTD_versionNumber", returnType = int.class, argumentTypes = {})
+            MethodHandle versionNumber,
+            // streaming decompression
+            @NativeSignature(name = "ZSTD_createDStream", returnType = MemorySegment.class, argumentTypes = {})
+            MethodHandle createDecompressStream,
+            @NativeSignature(name = "ZSTD_freeDStream", returnType = void.class, argumentTypes = MemorySegment.class)
+            MethodHandle freeDecompressStream,
+            @NativeSignature(name = "ZSTD_initDStream", returnType = long.class, argumentTypes = MemorySegment.class)
+            MethodHandle initDecompressStream,
+            @NativeSignature(name = "ZSTD_decompressStream_simpleArgs", returnType = long.class, argumentTypes = {MemorySegment.class, MemorySegment.class, long.class, MemorySegment.class, MemorySegment.class, long.class, MemorySegment.class})
+            MethodHandle decompressStreamSimpleArgs,
+            @NativeSignature(name = "ZSTD_DStreamInSize", returnType = long.class, argumentTypes = {})
+            MethodHandle decompressStreamInputSize,
+            // streaming compression
+            @NativeSignature(name = "ZSTD_createCStream", returnType = MemorySegment.class, argumentTypes = {})
+            MethodHandle createCompressStream,
+            @NativeSignature(name = "ZSTD_freeCStream", returnType = void.class, argumentTypes = MemorySegment.class)
+            MethodHandle freeCompressStream,
+            @NativeSignature(name = "ZSTD_initCStream", returnType = long.class, argumentTypes = {MemorySegment.class, int.class})
+            MethodHandle initCompressStream,
+            @NativeSignature(name = "ZSTD_compressStream2_simpleArgs", returnType = long.class, argumentTypes = {MemorySegment.class, MemorySegment.class, long.class, MemorySegment.class, MemorySegment.class, long.class, MemorySegment.class, int.class})
+            MethodHandle compressStream2SimpleArgs,
+            @NativeSignature(name = "ZSTD_CStreamOutSize", returnType = long.class, argumentTypes = {})
+            MethodHandle compressStreamOutputSize) {}
+
+    private ZstdNative() {}
+
+    private static final NativeLoader.Mode MODE = NativeLoader.Mode.of(IMPLEMENTATION_PROPERTY);
+    private static final Optional<LinkageError> LINKAGE_ERROR;
+    private static final MethodHandle MAX_COMPRESSED_LENGTH_METHOD;
+    private static final MethodHandle COMPRESS_METHOD;
+    private static final MethodHandle DECOMPRESS_METHOD;
+    private static final MethodHandle UNCOMPRESSED_LENGTH_METHOD;
+    private static final MethodHandle IS_ERROR_METHOD;
+    private static final MethodHandle GET_ERROR_CODE_METHOD;
+    private static final MethodHandle GET_ERROR_NAME_METHOD;
+    private static final MethodHandle CREATE_DECOMPRESS_STREAM_METHOD;
+    private static final MethodHandle FREE_DECOMPRESS_STREAM_METHOD;
+    private static final MethodHandle INIT_DECOMPRESS_STREAM_METHOD;
+    private static final MethodHandle DECOMPRESS_STREAM_SIMPLE_ARGS_METHOD;
+    private static final MethodHandle CREATE_COMPRESS_STREAM_METHOD;
+    private static final MethodHandle FREE_COMPRESS_STREAM_METHOD;
+    private static final MethodHandle INIT_COMPRESS_STREAM_METHOD;
+    private static final MethodHandle COMPRESS_STREAM_2_SIMPLE_ARGS_METHOD;
+
+    // recommended buffer sizes of the streaming API (ZSTD_DStreamInSize, ZSTD_CStreamOutSize), or 0
+    static final int DECOMPRESS_STREAM_INPUT_SIZE;
+    static final int COMPRESS_STREAM_OUTPUT_SIZE;
+
+    // ZSTD_EndDirective values for ZSTD_compressStream2
+    static final int ZSTD_E_CONTINUE = 0;
+    static final int ZSTD_E_FLUSH = 1;
+    static final int ZSTD_E_END = 2;
+
+    // same default as the Java encoder (zstd's ZSTD_defaultCLevel is 3 as well)
+    public static final int DEFAULT_COMPRESSION_LEVEL = CompressionParameters.DEFAULT_COMPRESSION_LEVEL;
+
+    // ZSTD_versionNumber of the loaded library (for example 10507 for 1.5.7), or 0
+    private static final int VERSION;
+
+    private static final long CONTENT_SIZE_UNKNOWN = -1L;
+
+    // ZSTD_ErrorCode values from zstd_errors.h that ZSTD_decompress reports for invalid, truncated or unsupported input
+    private static final int ERROR_PREFIX_UNKNOWN = 10;
+    private static final int ERROR_VERSION_UNSUPPORTED = 12;
+    private static final int ERROR_FRAME_PARAMETER_UNSUPPORTED = 14;
+    private static final int ERROR_FRAME_PARAMETER_WINDOW_TOO_LARGE = 16;
+    private static final int ERROR_CORRUPTION_DETECTED = 20;
+    private static final int ERROR_CHECKSUM_WRONG = 22;
+    private static final int ERROR_LITERALS_HEADER_WRONG = 24;
+    private static final int ERROR_DICTIONARY_CORRUPTED = 30;
+    private static final int ERROR_DICTIONARY_WRONG = 32;
+    private static final int ERROR_TABLE_LOG_TOO_LARGE = 44;
+    private static final int ERROR_MAX_SYMBOL_VALUE_TOO_LARGE = 46;
+    private static final int ERROR_MAX_SYMBOL_VALUE_TOO_SMALL = 48;
+    private static final int ERROR_DST_SIZE_TOO_SMALL = 70;
+    private static final int ERROR_SRC_SIZE_WRONG = 72;
+
+    // ZSTD_isError(code) == unsigned(code) > (size_t)(-ZSTD_error_maxCode); ZSTD_error_maxCode is 120 since zstd 1.3.
+    // TestZstdNativeIsError cross-checks this against the loaded library.
+    private static final long ERROR_THRESHOLD = -120L;
+
+    static {
+        List<String> names = NativeLoader.platformLibraryNames("zstd", 1);
+        NativeLoader.Symbols<MethodHandles> symbols = NativeLoader.loadSymbols(IMPLEMENTATION_PROPERTY, names, MethodHandles.class, lookup());
+        MethodHandles methodHandles = symbols.symbols();
+        MAX_COMPRESSED_LENGTH_METHOD = methodHandles.maxCompressedLength();
+        COMPRESS_METHOD = methodHandles.compress();
+        DECOMPRESS_METHOD = methodHandles.decompress();
+        UNCOMPRESSED_LENGTH_METHOD = methodHandles.uncompressedLength();
+        IS_ERROR_METHOD = methodHandles.isError();
+        GET_ERROR_CODE_METHOD = methodHandles.getErrorCode();
+        GET_ERROR_NAME_METHOD = methodHandles.getErrorName();
+        CREATE_DECOMPRESS_STREAM_METHOD = methodHandles.createDecompressStream();
+        FREE_DECOMPRESS_STREAM_METHOD = methodHandles.freeDecompressStream();
+        INIT_DECOMPRESS_STREAM_METHOD = methodHandles.initDecompressStream();
+        DECOMPRESS_STREAM_SIMPLE_ARGS_METHOD = methodHandles.decompressStreamSimpleArgs();
+        CREATE_COMPRESS_STREAM_METHOD = methodHandles.createCompressStream();
+        FREE_COMPRESS_STREAM_METHOD = methodHandles.freeCompressStream();
+        INIT_COMPRESS_STREAM_METHOD = methodHandles.initCompressStream();
+        COMPRESS_STREAM_2_SIMPLE_ARGS_METHOD = methodHandles.compressStream2SimpleArgs();
+
+        Optional<LinkageError> linkageError = symbols.linkageError();
+        int version = 0;
+        int decompressStreamInputSize = 0;
+        int compressStreamOutputSize = 0;
+        if (linkageError.isEmpty()) {
+            try {
+                version = (int) methodHandles.versionNumber().invokeExact();
+                decompressStreamInputSize = (int) (long) methodHandles.decompressStreamInputSize().invokeExact();
+                compressStreamOutputSize = (int) (long) methodHandles.compressStreamOutputSize().invokeExact();
+            }
+            catch (Throwable e) {
+                throw new ExceptionInInitializerError(e);
+            }
+            if (version < MIN_VERSION) {
+                linkageError = Optional.of(new LinkageError("libzstd " + versionString(version) + " is too old, " + versionString(MIN_VERSION) + " or newer is required"));
+            }
+        }
+        LINKAGE_ERROR = linkageError;
+        VERSION = version;
+        DECOMPRESS_STREAM_INPUT_SIZE = decompressStreamInputSize;
+        COMPRESS_STREAM_OUTPUT_SIZE = compressStreamOutputSize;
+
+        // once, at FINE level: which implementation this JVM ended up with and why
+        Logger logger = System.getLogger(ZstdNative.class.getName());
+        if (linkageError.isEmpty()) {
+            logger.log(Logger.Level.DEBUG, "Zstandard: using the system libzstd {0} through the foreign function API ({1}={2})", versionString(version), IMPLEMENTATION_PROPERTY, MODE.name().toLowerCase(java.util.Locale.ROOT));
+        }
+        else {
+            logger.log(Logger.Level.DEBUG, "Zstandard: using the Java implementation ({0}={1}): {2}", IMPLEMENTATION_PROPERTY, MODE.name().toLowerCase(java.util.Locale.ROOT), linkageError.get().getMessage());
+        }
+    }
+
+    /**
+     * Whether a codec object asked for with the given {@link Implementation} should be the native one.
+     * {@code NATIVE} insists and fails when the library is not usable; {@code AUTO} takes it when it is
+     * (or when the system property demands it, failing the same way).
+     */
+    static boolean useNative(Implementation implementation)
+    {
+        return switch (implementation) {
+            case JAVA -> false;
+            case NATIVE -> {
+                verifyEnabled();
+                yield true;
+            }
+            case AUTO -> isEnabled() || isRequired();
+        };
+    }
+
+    /** Whether the native library is in use (the system library was found, and the mode allows it). */
+    public static boolean isEnabled()
+    {
+        return LINKAGE_ERROR.isEmpty();
+    }
+
+    /** Whether {@code -Dio.airlift.compress.v3.zstd.implementation=native} demands the native library: then there is no fallback to Java. */
+    public static boolean isRequired()
+    {
+        return MODE == NativeLoader.Mode.NATIVE;
+    }
+
+    public static void verifyEnabled()
+    {
+        if (LINKAGE_ERROR.isPresent()) {
+            throw new IllegalStateException("Zstd native library is not enabled: " + LINKAGE_ERROR.get().getMessage(), LINKAGE_ERROR.get());
+        }
+    }
+
+    /** The version of the loaded library, for example {@code 1.5.7}; empty when it is not in use. */
+    public static Optional<String> version()
+    {
+        return isEnabled() ? Optional.of(versionString(VERSION)) : Optional.empty();
+    }
+
+    private static String versionString(int version)
+    {
+        return (version / 10000) + "." + (version / 100 % 100) + "." + (version % 100);
+    }
+
+    public static long maxCompressedLength(long inputLength)
+    {
+        long result;
+        try {
+            result = (long) MAX_COMPRESSED_LENGTH_METHOD.invokeExact(inputLength);
+        }
+        catch (Throwable e) {
+            throw new AssertionError("should not reach here", e);
+        }
+        if (isError(result)) {
+            throw new IllegalArgumentException("Unknown error occurred during compression: " + getErrorName(result));
+        }
+        return result;
+    }
+
+    public static long compress(MemorySegment input, long inputLength, MemorySegment compressed, long compressedLength, int compressionLevel)
+    {
+        long result;
+        try {
+            result = (long) COMPRESS_METHOD.invokeExact(compressed, compressedLength, input, inputLength, compressionLevel);
+        }
+        catch (Error e) {
+            throw e;
+        }
+        catch (Throwable e) {
+            throw new Error("Unexpected exception", e);
+        }
+
+        if (isError(result)) {
+            throw new IllegalArgumentException("Unknown error occurred during compression: " + getErrorName(result));
+        }
+        return result;
+    }
+
+    public static long decompress(MemorySegment compressed, long compressedLength, MemorySegment output, long outputLength)
+    {
+        long result;
+        try {
+            result = (long) DECOMPRESS_METHOD.invokeExact(output, outputLength, compressed, compressedLength);
+        }
+        catch (Error e) {
+            throw e;
+        }
+        catch (Throwable e) {
+            throw new Error("Unexpected exception", e);
+        }
+
+        if (isError(result)) {
+            if (isMalformedInputError(result)) {
+                throw new MalformedInputException(0, getErrorName(result));
+            }
+            throw new IllegalArgumentException("Unknown error occurred during decompression: " + getErrorName(result));
+        }
+        return result;
+    }
+
+    public static long decompressedLength(MemorySegment compressed, long compressedLength)
+    {
+        long result;
+        try {
+            result = (long) UNCOMPRESSED_LENGTH_METHOD.invokeExact(compressed, compressedLength);
+        }
+        catch (Error e) {
+            throw e;
+        }
+        catch (Throwable e) {
+            throw new Error("Unexpected exception", e);
+        }
+
+        // any other negative result is ZSTD_CONTENTSIZE_ERROR, returned for an invalid magic or a truncated frame header
+        if (CONTENT_SIZE_UNKNOWN != result && result < 0) {
+            throw new MalformedInputException(0, "Invalid or truncated frame header");
+        }
+        return result;
+    }
+
+    public static MemorySegment createDecompressStream()
+    {
+        try {
+            return (MemorySegment) CREATE_DECOMPRESS_STREAM_METHOD.invokeExact();
+        }
+        catch (Error e) {
+            throw e;
+        }
+        catch (Throwable e) {
+            throw new Error("Unexpected exception", e);
+        }
+    }
+
+    public static void freeDecompressStream(MemorySegment stream)
+    {
+        try {
+            FREE_DECOMPRESS_STREAM_METHOD.invokeExact(stream);
+        }
+        catch (Error e) {
+            throw e;
+        }
+        catch (Throwable e) {
+            throw new Error("Unexpected exception", e);
+        }
+    }
+
+    public static void initDecompressStream(MemorySegment stream)
+    {
+        long result;
+        try {
+            result = (long) INIT_DECOMPRESS_STREAM_METHOD.invokeExact(stream);
+        }
+        catch (Error e) {
+            throw e;
+        }
+        catch (Throwable e) {
+            throw new Error("Unexpected exception", e);
+        }
+        if (isError(result)) {
+            throw new IllegalArgumentException("Unknown error occurred during decompression: " + getErrorName(result));
+        }
+    }
+
+    /**
+     * ZSTD_decompressStream with positions passed as one-element arrays.
+     *
+     * @return 0 when a frame is complete, otherwise a hint of how much input the next call wants
+     */
+    public static long decompressStream(MemorySegment stream, MemorySegment output, long outputCapacity, MemorySegment outputPosition, MemorySegment input, long inputSize, MemorySegment inputPosition)
+    {
+        long result;
+        try {
+            result = (long) DECOMPRESS_STREAM_SIMPLE_ARGS_METHOD.invokeExact(stream, output, outputCapacity, outputPosition, input, inputSize, inputPosition);
+        }
+        catch (Error e) {
+            throw e;
+        }
+        catch (Throwable e) {
+            throw new Error("Unexpected exception", e);
+        }
+        if (isError(result)) {
+            if (isMalformedInputError(result)) {
+                throw new MalformedInputException(0, getErrorName(result));
+            }
+            throw new IllegalArgumentException("Unknown error occurred during decompression: " + getErrorName(result));
+        }
+        return result;
+    }
+
+    public static MemorySegment createCompressStream()
+    {
+        try {
+            return (MemorySegment) CREATE_COMPRESS_STREAM_METHOD.invokeExact();
+        }
+        catch (Error e) {
+            throw e;
+        }
+        catch (Throwable e) {
+            throw new Error("Unexpected exception", e);
+        }
+    }
+
+    public static void freeCompressStream(MemorySegment stream)
+    {
+        try {
+            FREE_COMPRESS_STREAM_METHOD.invokeExact(stream);
+        }
+        catch (Error e) {
+            throw e;
+        }
+        catch (Throwable e) {
+            throw new Error("Unexpected exception", e);
+        }
+    }
+
+    public static void initCompressStream(MemorySegment stream, int compressionLevel)
+    {
+        long result;
+        try {
+            result = (long) INIT_COMPRESS_STREAM_METHOD.invokeExact(stream, compressionLevel);
+        }
+        catch (Error e) {
+            throw e;
+        }
+        catch (Throwable e) {
+            throw new Error("Unexpected exception", e);
+        }
+        if (isError(result)) {
+            throw new IllegalArgumentException("Unknown error occurred during compression: " + getErrorName(result));
+        }
+    }
+
+    /**
+     * ZSTD_compressStream2 with positions passed as one-element arrays.
+     *
+     * @return 0 when the input and the pending output have been fully processed for the given directive,
+     * otherwise the minimum number of bytes still to be flushed
+     */
+    public static long compressStream(MemorySegment stream, MemorySegment output, long outputCapacity, MemorySegment outputPosition, MemorySegment input, long inputSize, MemorySegment inputPosition, int endDirective)
+    {
+        long result;
+        try {
+            result = (long) COMPRESS_STREAM_2_SIMPLE_ARGS_METHOD.invokeExact(stream, output, outputCapacity, outputPosition, input, inputSize, inputPosition, endDirective);
+        }
+        catch (Error e) {
+            throw e;
+        }
+        catch (Throwable e) {
+            throw new Error("Unexpected exception", e);
+        }
+        if (isError(result)) {
+            throw new IllegalArgumentException("Unknown error occurred during compression: " + getErrorName(result));
+        }
+        return result;
+    }
+
+    static boolean isError(long code)
+    {
+        return compareUnsigned(code, ERROR_THRESHOLD) > 0;
+    }
+
+    // Visible for testing
+    static boolean nativeIsError(long code)
+    {
+        try {
+            return (int) IS_ERROR_METHOD.invokeExact(code) != 0;
+        }
+        catch (Throwable e) {
+            throw new AssertionError("should not reach here", e);
+        }
+    }
+
+    // Matches ZstdJavaDecompressor, which reports all of these as MalformedInputException, including an output buffer that is too small
+    private static boolean isMalformedInputError(long code)
+    {
+        int errorCode;
+        try {
+            errorCode = (int) GET_ERROR_CODE_METHOD.invokeExact(code);
+        }
+        catch (Throwable e) {
+            throw new AssertionError("should not reach here", e);
+        }
+        return switch (errorCode) {
+            // unknown magic or frame parameters the decoder does not support
+            case ERROR_PREFIX_UNKNOWN, ERROR_VERSION_UNSUPPORTED, ERROR_FRAME_PARAMETER_UNSUPPORTED, ERROR_FRAME_PARAMETER_WINDOW_TOO_LARGE -> true;
+            // corrupt frame content, including entropy table headers and dictionary references
+            case ERROR_CORRUPTION_DETECTED, ERROR_CHECKSUM_WRONG, ERROR_LITERALS_HEADER_WRONG, ERROR_DICTIONARY_CORRUPTED, ERROR_DICTIONARY_WRONG -> true;
+            case ERROR_TABLE_LOG_TOO_LARGE, ERROR_MAX_SYMBOL_VALUE_TOO_LARGE, ERROR_MAX_SYMBOL_VALUE_TOO_SMALL -> true;
+            // truncated input, or content that does not fit in the output buffer
+            case ERROR_SRC_SIZE_WRONG, ERROR_DST_SIZE_TOO_SMALL -> true;
+            // GENERIC, memory_allocation and parameter errors are not caused by the input
+            default -> false;
+        };
+    }
+
+    private static String getErrorName(long code)
+    {
+        try {
+            MemorySegment name = (MemorySegment) GET_ERROR_NAME_METHOD.invokeExact(code);
+            return name.reinterpret(Long.MAX_VALUE).getString(0);
+        }
+        catch (Error e) {
+            throw e;
+        }
+        catch (Throwable e) {
+            throw new Error("Unexpected exception", e);
+        }
+    }
+}

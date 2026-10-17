@@ -13,234 +13,99 @@
  */
 package io.airlift.compress.v3.zstd;
 
+import io.airlift.compress.v3.Implementation;
 
 import java.io.IOException;
 import java.io.OutputStream;
-import java.util.Arrays;
 
 import static io.airlift.compress.v3.zstd.CompressionParameters.DEFAULT_COMPRESSION_LEVEL;
-import static io.airlift.compress.v3.zstd.Constants.SIZE_OF_BLOCK_HEADER;
-import static io.airlift.compress.v3.zstd.Constants.SIZE_OF_LONG;
-import static io.airlift.compress.v3.zstd.Util.checkState;
-import static java.lang.Math.max;
-import static java.lang.Math.min;
 import static java.util.Objects.requireNonNull;
 
+/**
+ * Compresses to the Zstandard frame format, with the Java encoder or the system's native library.
+ * <p>
+ * Which one is decided per stream, by the {@link Implementation} argument and the
+ * {@code io.airlift.compress.v3.zstd.implementation} system property; see {@link ZstdCompressor#create()}.
+ * The Java encoder implements levels 3 to 12, the native library every level zstd knows.
+ */
 public class ZstdOutputStream
         extends OutputStream
 {
-    private final OutputStream outputStream;
-    private final CompressionContext context;
-    private final int maxBufferSize;
-    private final int slideAlignment;
-
-    private XxHash64 partialHash;
-
-    private byte[] uncompressed = new byte[0];
-    private final byte[] compressed;
-
-    // start of unprocessed data in uncompressed buffer
-    private int uncompressedOffset;
-    // end of unprocessed data in uncompressed buffer
-    private int uncompressedPosition;
-
-    private boolean closed;
+    private final OutputStream delegate;
+    private final boolean nativeImplementation;
 
     /**
-     * Creates a stream compressing at the {@linkplain CompressionParameters#DEFAULT_COMPRESSION_LEVEL default compression level}.
+     * Creates a stream compressing at the {@linkplain CompressionParameters#DEFAULT_COMPRESSION_LEVEL default compression level},
+     * with the native library if available ({@link Implementation#AUTO}).
      */
     public ZstdOutputStream(OutputStream outputStream)
             throws IOException
     {
-        this(outputStream, DEFAULT_COMPRESSION_LEVEL);
+        this(outputStream, DEFAULT_COMPRESSION_LEVEL, Implementation.AUTO);
     }
 
     /**
-     * Creates a stream compressing at the given compression level.
+     * Creates a stream compressing at the given compression level, with the native library if available
+     * ({@link Implementation#AUTO}).
      *
      * @param compressionLevel a level between 1 and {@value CompressionParameters#MAX_COMPRESSION_LEVEL}
-     * (0 selects the default level, {@value CompressionParameters#DEFAULT_COMPRESSION_LEVEL}). Only
-     * levels whose match-finding strategy is implemented by the Java encoder are accepted: currently
-     * the double-fast levels 3 and 4 and the greedy and lazy levels 5 to 12. Other levels throw
-     * {@link IllegalArgumentException}.
+     * (0 selects the default level, {@value CompressionParameters#DEFAULT_COMPRESSION_LEVEL}). The Java
+     * encoder accepts only levels whose match-finding strategy it implements, 3 to 12, and throws
+     * {@link IllegalArgumentException} for the others; the native library accepts every level.
      */
     public ZstdOutputStream(OutputStream outputStream, int compressionLevel)
             throws IOException
     {
-        this.outputStream = requireNonNull(outputStream, "outputStream is null");
-        CompressionParameters.checkCompressionLevel(compressionLevel);
-        CompressionParameters parameters = CompressionParameters.compute(compressionLevel, -1);
-        this.context = new CompressionContext(parameters, 0, Integer.MAX_VALUE);
-        this.maxBufferSize = parameters.getWindowSize() * 4;
-        this.slideAlignment = parameters.getSlideAlignment();
-        checkState(slideAlignment <= parameters.getWindowSize(), "chain table larger than the window");
+        this(outputStream, compressionLevel, Implementation.AUTO);
+    }
 
-        // create output buffer large enough for a single block
-        int bufferSize = context.parameters.getBlockSize() + SIZE_OF_BLOCK_HEADER;
-        // todo is the "+ (bufferSize >>> 8)" required here?
-        // add extra long to give code more leeway
-        this.compressed = new byte[bufferSize + (bufferSize >>> 8) + SIZE_OF_LONG];
+    /**
+     * Creates a stream compressing at the given compression level with the given implementation.
+     *
+     * @throws IllegalStateException for {@link Implementation#NATIVE} when the native library cannot be used
+     */
+    public ZstdOutputStream(OutputStream outputStream, int compressionLevel, Implementation implementation)
+            throws IOException
+    {
+        requireNonNull(outputStream, "outputStream is null");
+        requireNonNull(implementation, "implementation is null");
+        this.nativeImplementation = ZstdNative.useNative(implementation);
+        this.delegate = nativeImplementation
+                ? new ZstdNativeOutputStream(outputStream, compressionLevel)
+                : new ZstdJavaOutputStream(outputStream, compressionLevel);
+    }
+
+    /** Whether this stream compresses with the native library. */
+    public boolean isNative()
+    {
+        return nativeImplementation;
     }
 
     @Override
     public void write(int b)
             throws IOException
     {
-        if (closed) {
-            throw new IOException("Stream is closed");
-        }
-
-        growBufferIfNecessary(1);
-
-        uncompressed[uncompressedPosition++] = (byte) b;
-
-        compressIfNecessary();
-    }
-
-    @Override
-    public void write(byte[] buffer)
-            throws IOException
-    {
-        write(buffer, 0, buffer.length);
+        delegate.write(b);
     }
 
     @Override
     public void write(byte[] buffer, int offset, int length)
             throws IOException
     {
-        if (closed) {
-            throw new IOException("Stream is closed");
-        }
-
-        growBufferIfNecessary(length);
-
-        while (length > 0) {
-            int writeSize = min(length, uncompressed.length - uncompressedPosition);
-            System.arraycopy(buffer, offset, uncompressed, uncompressedPosition, writeSize);
-
-            uncompressedPosition += writeSize;
-            length -= writeSize;
-            offset += writeSize;
-
-            compressIfNecessary();
-        }
+        delegate.write(buffer, offset, length);
     }
 
-    private void growBufferIfNecessary(int length)
-    {
-        if (uncompressedPosition + length <= uncompressed.length || uncompressed.length >= maxBufferSize) {
-            return;
-        }
-
-        // assume we will need double the current required space
-        int newSize = (uncompressed.length + length) * 2;
-        // limit to max buffer size
-        newSize = min(newSize, maxBufferSize);
-        // allocate at least a minimal buffer to start;
-        newSize = max(newSize, context.parameters.getBlockSize());
-        uncompressed = Arrays.copyOf(uncompressed, newSize);
-    }
-
-    private void compressIfNecessary()
+    @Override
+    public void flush()
             throws IOException
     {
-        // only flush when the buffer if is max size, full, and the buffer is larger than the window and one additional block
-        if (uncompressed.length >= maxBufferSize &&
-                uncompressedPosition == uncompressed.length &&
-                uncompressed.length - context.parameters.getWindowSize() > context.parameters.getBlockSize()) {
-            writeChunk(false);
-        }
-    }
-
-    // visible for Hadoop stream
-    void finishWithoutClosingSource()
-            throws IOException
-    {
-        if (!closed) {
-            writeChunk(true);
-            closed = true;
-        }
+        delegate.flush();
     }
 
     @Override
     public void close()
             throws IOException
     {
-        if (!closed) {
-            writeChunk(true);
-
-            closed = true;
-            outputStream.close();
-        }
-    }
-
-    private void writeChunk(boolean lastChunk)
-            throws IOException
-    {
-        int chunkSize;
-        if (lastChunk) {
-            // write all the data
-            chunkSize = uncompressedPosition - uncompressedOffset;
-        }
-        else {
-            int blockSize = context.parameters.getBlockSize();
-            chunkSize = uncompressedPosition - uncompressedOffset - context.parameters.getWindowSize() - blockSize;
-            checkState(chunkSize > blockSize, "Must write at least one full block");
-            // only write full blocks
-            chunkSize = (chunkSize / blockSize) * blockSize;
-        }
-
-        // if first write
-        if (partialHash == null) {
-            partialHash = new XxHash64();
-
-            // if this is also the last chunk we know the exact size, otherwise, this is traditional streaming
-            int inputSize = lastChunk ? chunkSize : -1;
-
-            int outputAddress = 0;
-            outputAddress += ZstdFrameCompressor.writeMagic(compressed, outputAddress, outputAddress + 4);
-            outputAddress += ZstdFrameCompressor.writeFrameHeader(compressed, outputAddress, outputAddress + 14, inputSize, context.parameters.getWindowSize());
-            outputStream.write(compressed, 0, outputAddress);
-        }
-
-        partialHash.update(uncompressed, uncompressedOffset, chunkSize);
-
-        // write one block at a time
-        // note this is a do while to ensure that zero length input gets at least one block written
-        do {
-            int blockSize = min(chunkSize, context.parameters.getBlockSize());
-            int compressedSize = ZstdFrameCompressor.writeCompressedBlock(
-                    uncompressed,
-                    uncompressedOffset,
-                    blockSize,
-                    compressed,
-                    0,
-                    compressed.length,
-                    context,
-                    lastChunk && blockSize == chunkSize);
-            outputStream.write(compressed, 0, compressedSize);
-            uncompressedOffset += blockSize;
-            chunkSize -= blockSize;
-        }
-        while (chunkSize > 0);
-
-        if (lastChunk) {
-            // write checksum
-            int hash = (int) partialHash.hash();
-            outputStream.write(hash);
-            outputStream.write(hash >> 8);
-            outputStream.write(hash >> 16);
-            outputStream.write(hash >> 24);
-        }
-        else {
-            // slide window forward, leaving (at least) the entire window and the unprocessed data
-            int slideWindowSize = uncompressedOffset - context.parameters.getWindowSize();
-            slideWindowSize -= slideWindowSize % slideAlignment;
-            context.slideWindow(slideWindowSize);
-
-            System.arraycopy(uncompressed, slideWindowSize, uncompressed, 0, uncompressedPosition - slideWindowSize);
-            uncompressedOffset -= slideWindowSize;
-            uncompressedPosition -= slideWindowSize;
-        }
+        delegate.close();
     }
 }

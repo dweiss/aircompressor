@@ -13,6 +13,7 @@
  */
 package io.airlift.compress.v3.zstd;
 
+import io.airlift.compress.v3.Implementation;
 import io.airlift.compress.v3.thirdparty.ZstdJniDecompressor;
 import org.junit.jupiter.api.Test;
 
@@ -25,6 +26,7 @@ import java.util.Random;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+/** Compression levels of the Java encoder (the native library accepts every level, see TestZstdNativeStream). */
 class TestZstdOutputStreamLevel
 {
     @Test
@@ -59,7 +61,7 @@ class TestZstdOutputStreamLevel
         byte[] input = compressibleInput(256 * 1024);
 
         ByteArrayOutputStream defaultLevel = new ByteArrayOutputStream();
-        try (ZstdOutputStream out = new ZstdOutputStream(defaultLevel)) {
+        try (ZstdOutputStream out = new ZstdOutputStream(defaultLevel, CompressionParameters.DEFAULT_COMPRESSION_LEVEL, Implementation.JAVA)) {
             out.write(input);
         }
 
@@ -72,7 +74,7 @@ class TestZstdOutputStreamLevel
     {
         // the fast strategy (levels 1, 2) and the binary tree strategies (levels 13 and up) are not implemented by the Java encoder
         for (int level : new int[] {1, 2, 13, 16, 19, CompressionParameters.MAX_COMPRESSION_LEVEL}) {
-            assertThatThrownBy(() -> new ZstdOutputStream(new ByteArrayOutputStream(), level))
+            assertThatThrownBy(() -> new ZstdOutputStream(new ByteArrayOutputStream(), level, Implementation.JAVA))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("not implemented");
         }
@@ -81,10 +83,10 @@ class TestZstdOutputStreamLevel
     @Test
     void testInvalidLevel()
     {
-        assertThatThrownBy(() -> new ZstdOutputStream(new ByteArrayOutputStream(), -1))
+        assertThatThrownBy(() -> new ZstdOutputStream(new ByteArrayOutputStream(), -1, Implementation.JAVA))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("compressionLevel");
-        assertThatThrownBy(() -> new ZstdOutputStream(new ByteArrayOutputStream(), CompressionParameters.MAX_COMPRESSION_LEVEL + 1))
+        assertThatThrownBy(() -> new ZstdOutputStream(new ByteArrayOutputStream(), CompressionParameters.MAX_COMPRESSION_LEVEL + 1, Implementation.JAVA))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("compressionLevel");
     }
@@ -93,7 +95,7 @@ class TestZstdOutputStreamLevel
             throws IOException
     {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
-        try (ZstdOutputStream out = new ZstdOutputStream(output, level)) {
+        try (ZstdOutputStream out = new ZstdOutputStream(output, level, Implementation.JAVA)) {
             for (int offset = 0; offset < input.length; offset += 64 * 1024) {
                 out.write(input, offset, Math.min(64 * 1024, input.length - offset));
             }

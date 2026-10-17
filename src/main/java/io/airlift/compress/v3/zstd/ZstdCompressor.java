@@ -14,6 +14,7 @@
 package io.airlift.compress.v3.zstd;
 
 import io.airlift.compress.v3.Compressor;
+import io.airlift.compress.v3.Implementation;
 
 import java.lang.foreign.MemorySegment;
 
@@ -22,8 +23,41 @@ public interface ZstdCompressor
 {
     int compress(MemorySegment input, MemorySegment output);
 
+    /**
+     * The native compressor (the system's libzstd through the foreign function API) when it is available
+     * and enabled, otherwise the Java one; see {@code io.airlift.compress.v3.zstd.implementation} in the README.
+     */
     static ZstdCompressor create()
     {
-        return new ZstdJavaCompressor();
+        return create(Implementation.AUTO);
+    }
+
+    /**
+     * Like {@link #create()}, at the given compression level. The Java compressor accepts levels 3 to 12
+     * only, the native one every level zstd knows.
+     */
+    static ZstdCompressor create(int compressionLevel)
+    {
+        return create(compressionLevel, Implementation.AUTO);
+    }
+
+    /**
+     * The given implementation at the default compression level.
+     *
+     * @throws IllegalStateException for {@link Implementation#NATIVE} when the native library cannot be used
+     */
+    static ZstdCompressor create(Implementation implementation)
+    {
+        return ZstdNative.useNative(implementation) ? new ZstdNativeCompressor() : new ZstdJavaCompressor();
+    }
+
+    /**
+     * The given implementation at the given compression level.
+     *
+     * @throws IllegalStateException for {@link Implementation#NATIVE} when the native library cannot be used
+     */
+    static ZstdCompressor create(int compressionLevel, Implementation implementation)
+    {
+        return ZstdNative.useNative(implementation) ? new ZstdNativeCompressor(compressionLevel) : new ZstdJavaCompressor(compressionLevel);
     }
 }
