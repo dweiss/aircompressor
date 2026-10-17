@@ -1,9 +1,11 @@
 # Compression for Java
 
 > **This is a fork of [airlift/aircompressor](https://github.com/airlift/aircompressor).**
-> It turns the library into a pure-Java one: no `sun.misc.Unsafe`, no native code, nothing to
-> unpack or load at runtime. Java packages (`io.airlift.compress.v3`) and the API of the Java
-> implementations are unchanged, so it is a drop-in replacement wherever the Java codecs were used.
+> It turns the library into a pure-Java module: no `sun.misc.Unsafe`, no native code, nothing to
+> unpack or load at runtime, and no dependencies. The Hadoop integration is gone (the
+> `CompressionCodec` implementations and the `HadoopStreams` factories), so this is **not a drop-in
+> replacement** for code that used those. The Java packages (`io.airlift.compress.v3`) and the API of
+> the plain Java compressors, decompressors and streams are unchanged.
 > Its Maven coordinates are `com.carrotsearch.thirdparty.airlift:aircompressor-v3-jdk25`; upstream's
 > `io.airlift:aircompressor-v3` releases do not contain these changes. Upstream commits are ported
 > selectively; [UPSTREAM.md](UPSTREAM.md) records the last reviewed upstream commit and the decisions.
