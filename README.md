@@ -21,20 +21,25 @@ without `sun.misc.Unsafe`, JNI or bundled native libraries.
   libraries and their loader are gone, together with the `aircompressor.tmpdir` and
   `io.airlift.compress.v3.disable-native` system properties. The `create()` factories always
   return the Java implementations. Removed along the way, because they only worked with native code:
-  XXHash3, `Lz4Compressor.create(int acceleration)`, `ZstdCompressor.create(int compressionLevel)`
-  and the `useNative` argument of `Lz4HadoopStreams` and `SnappyHadoopStreams`.
+  XXHash3, `Lz4Compressor.create(int acceleration)` and `ZstdCompressor.create(int compressionLevel)`.
+* **No Hadoop integration.** The `CompressionCodec` implementations, the `HadoopStreams`
+  factories and the gzip package, which only existed for Hadoop, are gone, and so is the lzop
+  (`.lzo` file) reader that was built on them. The library has no dependencies at all.
 * **Zstd compression levels.** `new ZstdJavaCompressor(level)` and `new ZstdOutputStream(out, level)`
   select the compression level (upstream always uses level 3). Levels 3 and 4 (double fast) and
   5 to 12 (greedy, lazy and lazy2 parsers with zstd's row hash and hash chain match finders, ported
   from zstd 1.5.7) are implemented in Java; the level table is the one of zstd 1.5.7. Levels 1 and 2
   and 13 and up throw `IllegalArgumentException`.
+* **A Java module.** The jar carries a module descriptor: `module io.airlift.compress.v3`, which
+  exports every package, opens none of them to reflection and requires nothing but `java.base`. The
+  test suite runs patched into the module, on the module path.
 * **Standalone build.** The `io.airlift:airbase` parent pom is gone; `pom.xml` declares its plugins
   and dependency versions directly and keeps the same checkstyle rules and license header check.
 * **Faster bzip2 decompression**: a bulk bit reader, Huffman lookup tables and a multi-chain
   inverse BWT, brought over from the Lingo4G decoder. `BZip2InputStream` decompresses
   concatenated streams (for example the output of `pbzip2`), or stops after the first stream and
   leaves the input positioned right after it, and it can decompress the blocks of a stream
-  concurrently on an `ExecutorService` (also available as `new BZip2HadoopStreams(executor, n)`).
+  concurrently on an `ExecutorService`.
   `BZip2OutputStream` writes complete `.bz2` streams. (`CBZip2InputStream`, the name of the
   decompressor in version 3.8, is deprecated.)
 * **lz4-java block streams**: `Lz4BlockInputStream` and `Lz4BlockOutputStream` read and write the
@@ -186,20 +191,6 @@ try (XxHash32Hasher hasher = XxHash32Hasher.create()) {
     int hash = hasher.digest();
 }
 ```
-
-# Hadoop Compression
-
-In addition to the raw block encoders, there are implementations of the
-Hadoop streams for the above algorithms. In addition, implementations of
-gzip and bzip2 are provided so that all standard Hadoop algorithms are available.
-The bzip2 decompressor is pure Java, reads its input in 64 KiB chunks and also
-decompresses concatenated bzip2 streams (for example the output of `pbzip2`).
-`new BZip2HadoopStreams(executor, maxConcurrentInFlight)` creates input streams that
-decompress the blocks of the data in parallel.
-
-The `HadoopStreams` class provides a factory for creating `InputStream` and `OutputStream`
-implementations without the need for any Hadoop dependencies.  For environments 
-that have Hadoop dependencies, each algorithm also provides a `CompressionCodec` class.
 
 # Requirements
 

@@ -15,23 +15,16 @@ package io.airlift.compress.v3.benchmark;
 
 import io.airlift.compress.v3.Compressor;
 import io.airlift.compress.v3.Decompressor;
-import io.airlift.compress.v3.HadoopCodecCompressor;
-import io.airlift.compress.v3.HadoopCodecDecompressor;
 import io.airlift.compress.v3.deflate.DeflateJavaCompressor;
 import io.airlift.compress.v3.deflate.DeflateJavaDecompressor;
-import io.airlift.compress.v3.lz4.Lz4Codec;
 import io.airlift.compress.v3.lz4.Lz4FrameJavaCompressor;
 import io.airlift.compress.v3.lz4.Lz4FrameJavaDecompressor;
 import io.airlift.compress.v3.lz4.Lz4JavaCompressor;
 import io.airlift.compress.v3.lz4.Lz4JavaDecompressor;
-import io.airlift.compress.v3.lzo.LzoCodec;
 import io.airlift.compress.v3.lzo.LzoCompressor;
 import io.airlift.compress.v3.lzo.LzoDecompressor;
-import io.airlift.compress.v3.snappy.SnappyCodec;
 import io.airlift.compress.v3.snappy.SnappyJavaCompressor;
 import io.airlift.compress.v3.snappy.SnappyJavaDecompressor;
-import io.airlift.compress.v3.thirdparty.HadoopLzoCompressor;
-import io.airlift.compress.v3.thirdparty.HadoopLzoDecompressor;
 import io.airlift.compress.v3.thirdparty.JPountzLz4Compressor;
 import io.airlift.compress.v3.thirdparty.JPountzLz4Decompressor;
 import io.airlift.compress.v3.thirdparty.JdkDeflateCompressor;
@@ -43,9 +36,6 @@ import io.airlift.compress.v3.thirdparty.ZstdJniDecompressor;
 import io.airlift.compress.v3.zstd.ZstdJavaCompressor;
 import io.airlift.compress.v3.zstd.ZstdJavaDecompressor;
 import net.jpountz.lz4.LZ4Factory;
-import org.apache.hadoop.conf.Configurable;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.io.compress.CompressionCodec;
 
 public enum Algorithm
 {
@@ -60,39 +50,22 @@ public enum Algorithm
     airlift_zstd_12(new ZstdJavaDecompressor(), new ZstdJavaCompressor(12)),
     airlift_deflate(new DeflateJavaDecompressor(), new DeflateJavaCompressor()),
 
-    airlift_lz4_stream(new Lz4Codec(), new Lz4JavaCompressor()),
-    airlift_snappy_stream(new SnappyCodec(), new SnappyJavaCompressor()),
-    airlift_lzo_stream(new LzoCodec(), new LzoCompressor()),
 
     jpountz_lz4_jni(new JPountzLz4Decompressor(LZ4Factory.nativeInstance()), new JPountzLz4Compressor(LZ4Factory.nativeInstance())),
     jpountz_lz4_safe(new JPountzLz4Decompressor(LZ4Factory.safeInstance()), new JPountzLz4Compressor(LZ4Factory.safeInstance())),
     jpountz_lz4_unsafe(new JPountzLz4Decompressor(LZ4Factory.unsafeInstance()), new JPountzLz4Compressor(LZ4Factory.unsafeInstance())),
     xerial_snappy(new XerialSnappyDecompressor(), new XerialSnappyCompressor()),
-    hadoop_lzo(new HadoopLzoDecompressor(), new HadoopLzoCompressor()),
     zstd_jni(new ZstdJniDecompressor(), new ZstdJniCompressor(3)),
     zstd_jni_5(new ZstdJniDecompressor(), new ZstdJniCompressor(5)),
     zstd_jni_7(new ZstdJniDecompressor(), new ZstdJniCompressor(7)),
     zstd_jni_9(new ZstdJniDecompressor(), new ZstdJniCompressor(9)),
     zstd_jni_12(new ZstdJniDecompressor(), new ZstdJniCompressor(12)),
 
-    hadoop_lz4_stream(new org.apache.hadoop.io.compress.Lz4Codec(), new Lz4JavaCompressor()),
-    hadoop_snappy_stream(new org.apache.hadoop.io.compress.SnappyCodec(), new SnappyJavaCompressor()),
-    hadoop_lzo_stream(new org.anarres.lzo.hadoop.codec.LzoCodec(), new LzoCompressor()),
 
-    java_zip_stream(new JdkInflateDecompressor(), new JdkDeflateCompressor()),
-    hadoop_gzip_stream(new org.apache.hadoop.io.compress.GzipCodec(), new LzoCompressor());
+    java_zip_stream(new JdkInflateDecompressor(), new JdkDeflateCompressor());
 
     private final Decompressor decompressor;
     private final Compressor compressor;
-
-    Algorithm(CompressionCodec compressionCodec, Compressor compressor)
-    {
-        if (compressionCodec instanceof Configurable) {
-            ((Configurable) compressionCodec).setConf(new Configuration());
-        }
-        this.decompressor = new HadoopCodecDecompressor(compressionCodec);
-        this.compressor = new HadoopCodecCompressor(compressionCodec, compressor);
-    }
 
     Algorithm(Decompressor decompressor, Compressor compressor)
     {

@@ -16,10 +16,9 @@ package io.airlift.compress.v3.lzo;
 import io.airlift.compress.v3.AbstractTestCompression;
 import io.airlift.compress.v3.Compressor;
 import io.airlift.compress.v3.Decompressor;
-import io.airlift.compress.v3.HadoopNative;
 import io.airlift.compress.v3.MalformedInputException;
-import io.airlift.compress.v3.thirdparty.HadoopLzoCompressor;
-import io.airlift.compress.v3.thirdparty.HadoopLzoDecompressor;
+import io.airlift.compress.v3.thirdparty.AnarresLzoCompressor;
+import io.airlift.compress.v3.thirdparty.AnarresLzoDecompressor;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
@@ -30,10 +29,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public class TestLzo
         extends AbstractTestCompression
 {
-    static {
-        HadoopNative.requireHadoopNative();
-    }
-
     @Override
     protected Compressor getCompressor()
     {
@@ -49,13 +44,13 @@ public class TestLzo
     @Override
     protected Compressor getVerifyCompressor()
     {
-        return new HadoopLzoCompressor();
+        return new AnarresLzoCompressor();
     }
 
     @Override
     protected Decompressor getVerifyDecompressor()
     {
-        return new HadoopLzoDecompressor();
+        return new AnarresLzoDecompressor();
     }
 
     @Test

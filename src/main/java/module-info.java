@@ -11,26 +11,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.airlift.compress.v3.hadoop;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.List;
 
 /**
- * A factory for creating Hadoop compliant input and output streams.
- * Implementations of this interface are thread safe.
+ * Pure-Java compression codecs: LZ4, Snappy, Zstandard, LZO, bzip2 and Deflate, plus xxHash. The module
+ * depends on nothing but {@code java.base}; every package is exported and none is open to reflection.
  */
-public interface HadoopStreams
-{
-    String getDefaultFileExtension();
-
-    List<String> getHadoopCodecName();
-
-    HadoopInputStream createInputStream(InputStream in)
-            throws IOException;
-
-    HadoopOutputStream createOutputStream(OutputStream out)
-            throws IOException;
+module io.airlift.compress.v3 {
+    exports io.airlift.compress.v3;
+    exports io.airlift.compress.v3.bzip2;
+    exports io.airlift.compress.v3.deflate;
+    exports io.airlift.compress.v3.lz4;
+    exports io.airlift.compress.v3.lzo;
+    exports io.airlift.compress.v3.snappy;
+    exports io.airlift.compress.v3.xxhash;
+    exports io.airlift.compress.v3.zstd;
 }

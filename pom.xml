@@ -61,7 +61,6 @@
         <dep.assertj.version>3.27.7</dep.assertj.version>
         <dep.checkstyle.version>13.8.0</dep.checkstyle.version>
         <dep.guava.version>33.6.0-jre</dep.guava.version>
-        <dep.guice.version>7.0.0</dep.guice.version>
         <dep.jmh.version>1.37</dep.jmh.version>
         <dep.junit.version>6.1.2</dep.junit.version>
     </properties>
@@ -71,19 +70,7 @@
             <groupId>at.yawk.lz4</groupId>
             <artifactId>lz4-java</artifactId>
             <version>1.11.1</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.trino.hadoop</groupId>
-            <artifactId>hadoop-apache</artifactId>
-            <version>3.3.5-3</version>
-            <scope>provided</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.lz4</groupId>
-                    <artifactId>lz4-java</artifactId>
-                </exclusion>
-            </exclusions>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.github.luben</groupId>
@@ -98,15 +85,8 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.google.inject</groupId>
-            <artifactId>guice</artifactId>
-            <version>${dep.guice.version}</version>
-            <classifier>classes</classifier>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>org.anarres.lzo</groupId>
-            <artifactId>lzo-hadoop</artifactId>
+            <artifactId>lzo-core</artifactId>
             <version>1.0.6</version>
             <scope>test</scope>
             <exclusions>
@@ -117,10 +97,6 @@
                 <exclusion>
                     <groupId>com.google.code.findbugs</groupId>
                     <artifactId>jsr305</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.apache.hadoop</groupId>
-                    <artifactId>hadoop-core</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
@@ -196,6 +172,8 @@
                 <configuration>
                     <configLocation>src/checkstyle/checks.xml</configLocation>
                     <includeTestSourceDirectory>true</includeTestSourceDirectory>
+                    <!-- the checkstyle grammar does not parse module declarations -->
+                    <excludes>module-info.java</excludes>
                 </configuration>
                 <dependencies>
                     <dependency>
@@ -276,7 +254,10 @@
                             junit.jupiter.execution.parallel.config.dynamic.factor = ${test.parallelism.factor}
                         </configurationParameters>
                     </properties>
-                    <argLine>-Xmx${test.jvmsize} -Xms${test.jvmsize} -XX:+ExitOnOutOfMemoryError -XX:-OmitStackTraceInFastThrow -Dfile.encoding=UTF-8 -Duser.language=en -Duser.region=US -Duser.timezone=UTC</argLine>
+                    <!-- The tests are patched into the module and run on the module path. The module is not open, so JUnit
+                         (in the unnamed module) is granted reflective access to every test package here. Test resources are
+                         read through TestResources, a class of the module, because class loaders cannot see them. -->
+                    <argLine>-Xmx${test.jvmsize} -Xms${test.jvmsize} -XX:+ExitOnOutOfMemoryError -XX:-OmitStackTraceInFastThrow -Dfile.encoding=UTF-8 -Duser.language=en -Duser.region=US -Duser.timezone=UTC --add-opens io.airlift.compress.v3/io.airlift.compress.v3=ALL-UNNAMED --add-opens io.airlift.compress.v3/io.airlift.compress.v3.benchmark=ALL-UNNAMED --add-opens io.airlift.compress.v3/io.airlift.compress.v3.bzip2=ALL-UNNAMED --add-opens io.airlift.compress.v3/io.airlift.compress.v3.deflate=ALL-UNNAMED --add-opens io.airlift.compress.v3/io.airlift.compress.v3.lz4=ALL-UNNAMED --add-opens io.airlift.compress.v3/io.airlift.compress.v3.lzo=ALL-UNNAMED --add-opens io.airlift.compress.v3/io.airlift.compress.v3.snappy=ALL-UNNAMED --add-opens io.airlift.compress.v3/io.airlift.compress.v3.thirdparty=ALL-UNNAMED --add-opens io.airlift.compress.v3/io.airlift.compress.v3.xxhash=ALL-UNNAMED --add-opens io.airlift.compress.v3/io.airlift.compress.v3.zstd=ALL-UNNAMED</argLine>
                 </configuration>
             </plugin>
 

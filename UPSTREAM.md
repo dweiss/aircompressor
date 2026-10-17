@@ -2,8 +2,8 @@
 
 This fork tracks [airlift/aircompressor](https://github.com/airlift/aircompressor) selectively:
 upstream commits are reviewed and ported (cherry-picked or reimplemented) when they apply to the
-pure-Java code base. Native-only changes, native library updates and the `airbase` parent-pom
-bumps do not apply.
+pure-Java code base. Native-only changes, native library updates, the `airbase` parent-pom
+bumps and anything about the Hadoop codecs and streams (removed here) do not apply.
 
 ## Last reviewed upstream commit
 

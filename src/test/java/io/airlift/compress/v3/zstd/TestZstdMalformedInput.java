@@ -13,8 +13,8 @@
  */
 package io.airlift.compress.v3.zstd;
 
-import com.google.common.io.Resources;
 import io.airlift.compress.v3.MalformedInputException;
+import io.airlift.compress.v3.TestResources;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -47,7 +47,7 @@ class TestZstdMalformedInput
     void testDecompressCorruptInput()
             throws IOException
     {
-        byte[] compressed = Resources.toByteArray(Resources.getResource("data/zstd/offset-before-start.zst"));
+        byte[] compressed = TestResources.read("data/zstd/offset-before-start.zst");
         byte[] output = new byte[compressed.length * 10];
         for (ZstdDecompressor decompressor : decompressors()) {
             assertThatThrownBy(() -> decompressor.decompress(compressed, 0, compressed.length, output, 0, output.length))
@@ -61,8 +61,8 @@ class TestZstdMalformedInput
     void testDecompressBadChecksum()
             throws IOException
     {
-        byte[] compressed = Resources.toByteArray(Resources.getResource("data/zstd/with-checksum.zst"));
-        byte[] uncompressed = Resources.toByteArray(Resources.getResource("data/zstd/with-checksum"));
+        byte[] compressed = TestResources.read("data/zstd/with-checksum.zst");
+        byte[] uncompressed = TestResources.read("data/zstd/with-checksum");
         compressed[compressed.length - 1] ^= 1;
         byte[] output = new byte[uncompressed.length];
         for (ZstdDecompressor decompressor : decompressors()) {
