@@ -1,8 +1,10 @@
 # Compression for Java
 
 > **This is a fork of [airlift/aircompressor](https://github.com/airlift/aircompressor).**
-> It turns the library into a pure-Java module: no `sun.misc.Unsafe`, no native code, nothing to
-> unpack or load at runtime, and no dependencies. The Hadoop integration is gone (the
+> It turns the library into a pure-Java module: no `sun.misc.Unsafe`, no bundled native code, nothing
+> to unpack or load at runtime, and no dependencies. Zstandard can optionally use the `libzstd`
+> installed on the system, through the foreign function API, when native access is enabled; everything
+> works without it. The Hadoop integration is gone (the
 > `CompressionCodec` implementations and the `HadoopStreams` factories), so this is **not a drop-in
 > replacement** for code that used those. The Java packages (`io.airlift.compress.v3`) and the API of
 > the plain Java compressors, decompressors and streams are unchanged.
