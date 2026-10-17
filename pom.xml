@@ -10,7 +10,7 @@
 
     <name>aircompressor (Carrot Search fork)</name>
 
-    <description>A pure-Java fork of airlift/aircompressor: compression algorithms without sun.misc.Unsafe and without native code</description>
+    <description>A pure-Java fork of airlift/aircompressor: compression algorithms without sun.misc.Unsafe, native code or Hadoop integration, packaged as a Java module</description>
     <url>https://${fork.repository}</url>
 
     <inceptionYear>2011</inceptionYear>
