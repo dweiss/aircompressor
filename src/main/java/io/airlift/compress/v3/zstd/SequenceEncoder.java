@@ -102,7 +102,7 @@ final class SequenceEncoder
         maxSymbol = Histogram.findMaxSymbol(counts, MAX_LITERALS_LENGTH_SYMBOL);
         largestCount = Histogram.findLargestCount(counts, maxSymbol);
 
-        int literalsLengthEncodingType = selectEncodingType(largestCount, sequenceCount, DEFAULT_LITERAL_LENGTH_NORMALIZED_COUNTS_LOG, true, strategy);
+        int literalsLengthEncodingType = selectEncodingType(counts, maxSymbol, largestCount, sequenceCount, LITERAL_LENGTH_TABLE_LOG, DEFAULT_LITERAL_LENGTH_NORMALIZED_COUNTS, DEFAULT_LITERAL_LENGTH_NORMALIZED_COUNTS_LOG, true, strategy, workspace);
 
         FseCompressionTable literalLengthTable;
         switch (literalsLengthEncodingType) {
@@ -136,9 +136,9 @@ final class SequenceEncoder
         largestCount = Histogram.findLargestCount(counts, maxSymbol);
 
         // We can only use the basic table if max <= DEFAULT_MAX_OFFSET_CODE_SYMBOL, otherwise the offsets are too large .
-        boolean defaultAllowed = maxSymbol < DEFAULT_MAX_OFFSET_CODE_SYMBOL;
+        boolean defaultAllowed = maxSymbol <= DEFAULT_MAX_OFFSET_CODE_SYMBOL;
 
-        int offsetEncodingType = selectEncodingType(largestCount, sequenceCount, DEFAULT_OFFSET_NORMALIZED_COUNTS_LOG, defaultAllowed, strategy);
+        int offsetEncodingType = selectEncodingType(counts, maxSymbol, largestCount, sequenceCount, OFFSET_TABLE_LOG, DEFAULT_OFFSET_NORMALIZED_COUNTS, DEFAULT_OFFSET_NORMALIZED_COUNTS_LOG, defaultAllowed, strategy, workspace);
 
         FseCompressionTable offsetCodeTable;
         switch (offsetEncodingType) {
@@ -171,7 +171,7 @@ final class SequenceEncoder
         maxSymbol = Histogram.findMaxSymbol(counts, MAX_MATCH_LENGTH_SYMBOL);
         largestCount = Histogram.findLargestCount(counts, maxSymbol);
 
-        int matchLengthEncodingType = selectEncodingType(largestCount, sequenceCount, DEFAULT_MATCH_LENGTH_NORMALIZED_COUNTS_LOG, true, strategy);
+        int matchLengthEncodingType = selectEncodingType(counts, maxSymbol, largestCount, sequenceCount, MATCH_LENGTH_TABLE_LOG, DEFAULT_MATCH_LENGTH_NORMALIZED_COUNTS, DEFAULT_MATCH_LENGTH_NORMALIZED_COUNTS_LOG, true, strategy, workspace);
 
         FseCompressionTable matchLengthTable;
         switch (matchLengthEncodingType) {
@@ -296,11 +296,16 @@ final class SequenceEncoder
     }
 
     private static int selectEncodingType(
+            int[] counts,
+            int maxSymbol,
             int largestCount,
             int sequenceCount,
+            int maxTableLog,
+            short[] defaultNormalizedCounts,
             int defaultNormalizedCountsLog,
             boolean isDefaultTableAllowed,
-            CompressionParameters.Strategy strategy)
+            CompressionParameters.Strategy strategy,
+            SequenceEncodingContext workspace)
     {
         if (largestCount == sequenceCount) { // => all entries are equal
             if (isDefaultTableAllowed && sequenceCount <= 2) {
@@ -314,9 +319,10 @@ final class SequenceEncoder
             return SEQUENCE_ENCODING_RLE;
         }
 
-        if (strategy.ordinal() < CompressionParameters.Strategy.LAZY.ordinal()) { // TODO: more robust check. Maybe encapsulate in strategy objects
+        if (strategy.ordinal() < CompressionParameters.Strategy.LAZY.ordinal()) {
+            // fast strategies: a cheap heuristic
             if (isDefaultTableAllowed) {
-                int factor = 10 - strategy.ordinal(); // TODO more robust. Move it to strategy
+                int factor = 10 - (strategy.ordinal() + 1); // zstd numbers strategies from 1: 9 for fast, 8 for dfast, 7 for greedy
                 int baseLog = 3;
                 long minNumberOfSequences = ((1L << defaultNormalizedCountsLog) * factor) >> baseLog;  /* 28-36 for offset, 56-72 for lengths */
 
@@ -332,10 +338,85 @@ final class SequenceEncoder
             }
         }
         else {
-            // TODO implement when other strategies are supported
-            throw new UnsupportedOperationException("not yet implemented");
+            // stronger strategies: estimate the cost in bits of each encoding and pick the cheapest.
+            // (zstd also considers repeating the previous block's table, which this encoder does not keep.)
+            if (isDefaultTableAllowed) {
+                long basicCost = crossEntropyCost(defaultNormalizedCounts, defaultNormalizedCountsLog, counts, maxSymbol);
+                long compressedCost = (normalizedCountsCost(counts, maxSymbol, sequenceCount, maxTableLog, workspace) << 3) + entropyCost(counts, maxSymbol, sequenceCount);
+                if (basicCost <= compressedCost) {
+                    return SEQUENCE_ENCODING_BASIC;
+                }
+            }
         }
 
         return SEQUENCE_ENCODING_COMPRESSED;
     }
+
+    /**
+     * The size in bytes of the serialized normalized counts (the header of a compressed FSE table).
+     */
+    private static long normalizedCountsCost(int[] counts, int maxSymbol, int sequenceCount, int maxTableLog, SequenceEncodingContext workspace)
+    {
+        int tableLog = optimalTableLog(maxTableLog, sequenceCount, maxSymbol);
+        FiniteStateEntropy.normalizeCounts(workspace.costNormalizedCounts, tableLog, counts, sequenceCount, maxSymbol);
+        return FiniteStateEntropy.writeNormalizedCounts(workspace.costBuffer, 0, workspace.costBuffer.length, workspace.costNormalizedCounts, maxSymbol, tableLog);
+    }
+
+    /**
+     * The cost in bits of encoding the distribution described by {@code counts} using the entropy bound.
+     */
+    private static long entropyCost(int[] counts, int maxSymbol, int total)
+    {
+        long cost = 0;
+        for (int symbol = 0; symbol <= maxSymbol; symbol++) {
+            int count = counts[symbol];
+            int normalized = (int) ((256L * count) / total);
+            if (count != 0 && normalized == 0) {
+                normalized = 1;
+            }
+            cost += (long) count * INVERSE_PROBABILITY_LOG_256[normalized];
+        }
+        return cost >> 8;
+    }
+
+    /**
+     * The cost in bits of encoding the distribution described by {@code counts} using the table described by
+     * {@code normalizedCounts}, which must cover every symbol with a non-zero count.
+     */
+    private static long crossEntropyCost(short[] normalizedCounts, int accuracyLog, int[] counts, int maxSymbol)
+    {
+        int shift = 8 - accuracyLog;
+        long cost = 0;
+        for (int symbol = 0; symbol <= maxSymbol; symbol++) {
+            int normalized = normalizedCounts[symbol] != -1 ? normalizedCounts[symbol] : 1;
+            cost += (long) counts[symbol] * INVERSE_PROBABILITY_LOG_256[normalized << shift];
+        }
+        return cost >> 8;
+    }
+
+    /** -log2(i / 256) * 256, for i in 0..255 (zstd's kInverseProbabilityLog256). */
+    private static final short[] INVERSE_PROBABILITY_LOG_256 = {
+            0, 2048, 1792, 1642, 1536, 1453, 1386, 1329, 1280, 1236, 1197, 1162,
+            1130, 1100, 1073, 1047, 1024, 1001, 980, 960, 941, 923, 906, 889,
+            874, 859, 844, 830, 817, 804, 791, 779, 768, 756, 745, 734,
+            724, 714, 704, 694, 685, 676, 667, 658, 650, 642, 633, 626,
+            618, 610, 603, 595, 588, 581, 574, 567, 561, 554, 548, 542,
+            535, 529, 523, 517, 512, 506, 500, 495, 489, 484, 478, 473,
+            468, 463, 458, 453, 448, 443, 438, 434, 429, 424, 420, 415,
+            411, 407, 402, 398, 394, 390, 386, 382, 377, 373, 370, 366,
+            362, 358, 354, 350, 347, 343, 339, 336, 332, 329, 325, 322,
+            318, 315, 311, 308, 305, 302, 298, 295, 292, 289, 286, 282,
+            279, 276, 273, 270, 267, 264, 261, 258, 256, 253, 250, 247,
+            244, 241, 239, 236, 233, 230, 228, 225, 222, 220, 217, 215,
+            212, 209, 207, 204, 202, 199, 197, 194, 192, 190, 187, 185,
+            182, 180, 178, 175, 173, 171, 168, 166, 164, 162, 159, 157,
+            155, 153, 151, 149, 146, 144, 142, 140, 138, 136, 134, 132,
+            130, 128, 126, 123, 121, 119, 117, 115, 114, 112, 110, 108,
+            106, 104, 102, 100, 98, 96, 94, 93, 91, 89, 87, 85,
+            83, 82, 80, 78, 76, 74, 73, 71, 69, 67, 66, 64,
+            62, 61, 59, 57, 55, 54, 52, 50, 49, 47, 46, 44,
+            42, 41, 39, 37, 36, 34, 33, 31, 30, 28, 26, 25,
+            23, 22, 20, 19, 17, 16, 14, 13, 11, 10, 8, 7,
+            5, 4, 2, 1,
+    };
 }
