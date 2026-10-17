@@ -43,6 +43,6 @@ Skipped:
 - Build and release bookkeeping: `airbase` bumps (`46512f6`, `e08d92f`), release-plugin commits for
   3.8 to 3.11, GitHub Actions bumps (`4c06d16`, `bdfac87`, `3f50e29`, `f247a92`), Maven wrapper
   bumps (`f9a916f`, `5ac0dab`).
-- Dependency bumps not yet taken: zstd-jni 1.5.7-11 to 1.5.7-21 (`a6ea509`, `b128548`), lz4-java
-  1.11.1 to 1.12.0 (`8dfa74a`, `a81ef49`). zstd-jni is the reference the zstd level tests compare
-  sizes against, so bump it deliberately and re-run `TestZstdCompressionLevels`.
+- Dependency bumps: taken later, directly to the latest releases (zstd-jni 1.5.7-23, lz4-java 1.12.0)
+  rather than by cherry-picking `a6ea509`, `b128548`, `8dfa74a`, `a81ef49`. zstd-jni is the reference
+  the zstd level tests compare sizes against, so re-run `TestZstdCompressionLevels` after bumping it.
