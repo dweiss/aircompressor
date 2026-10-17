@@ -47,7 +47,7 @@ class TestZstdMalformedInput
     void testDecompressCorruptInput()
             throws IOException
     {
-        byte[] compressed = Resources.toByteArray(Resources.getResource("data/zstd/offset-before-start.zst"));
+        byte[] compressed = Resources.toByteArray(Resources.getResource("test-data/zstd/offset-before-start.zst"));
         byte[] output = new byte[compressed.length * 10];
         for (ZstdDecompressor decompressor : decompressors()) {
             assertThatThrownBy(() -> decompressor.decompress(compressed, 0, compressed.length, output, 0, output.length))
@@ -61,8 +61,8 @@ class TestZstdMalformedInput
     void testDecompressBadChecksum()
             throws IOException
     {
-        byte[] compressed = Resources.toByteArray(Resources.getResource("data/zstd/with-checksum.zst"));
-        byte[] uncompressed = Resources.toByteArray(Resources.getResource("data/zstd/with-checksum"));
+        byte[] compressed = Resources.toByteArray(Resources.getResource("test-data/zstd/with-checksum.zst"));
+        byte[] uncompressed = Resources.toByteArray(Resources.getResource("test-data/zstd/with-checksum"));
         compressed[compressed.length - 1] ^= 1;
         byte[] output = new byte[uncompressed.length];
         for (ZstdDecompressor decompressor : decompressors()) {

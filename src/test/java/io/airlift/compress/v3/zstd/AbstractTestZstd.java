@@ -44,8 +44,8 @@ public abstract class AbstractTestZstd
     {
         int padding = 1021;
 
-        byte[] compressed = Resources.toByteArray(Resources.getResource("data/zstd/with-checksum.zst"));
-        byte[] uncompressed = Resources.toByteArray(Resources.getResource("data/zstd/with-checksum"));
+        byte[] compressed = Resources.toByteArray(Resources.getResource("test-data/zstd/with-checksum.zst"));
+        byte[] uncompressed = Resources.toByteArray(Resources.getResource("test-data/zstd/with-checksum"));
 
         byte[] output = new byte[uncompressed.length + padding * 2]; // pre + post padding
         int decompressedSize = getDecompressor().decompress(compressed, 0, compressed.length, output, padding, output.length - padding);
@@ -57,8 +57,8 @@ public abstract class AbstractTestZstd
     void testConcatenatedFrames()
             throws IOException
     {
-        byte[] compressed = Resources.toByteArray(Resources.getResource("data/zstd/multiple-frames.zst"));
-        byte[] uncompressed = Resources.toByteArray(Resources.getResource("data/zstd/multiple-frames"));
+        byte[] compressed = Resources.toByteArray(Resources.getResource("test-data/zstd/multiple-frames.zst"));
+        byte[] uncompressed = Resources.toByteArray(Resources.getResource("test-data/zstd/multiple-frames"));
 
         byte[] output = new byte[uncompressed.length];
         getDecompressor().decompress(compressed, 0, compressed.length, output, 0, output.length);
@@ -70,7 +70,7 @@ public abstract class AbstractTestZstd
     void testInvalidSequenceOffset()
             throws IOException
     {
-        byte[] compressed = Resources.toByteArray(Resources.getResource("data/zstd/offset-before-start.zst"));
+        byte[] compressed = Resources.toByteArray(Resources.getResource("test-data/zstd/offset-before-start.zst"));
         byte[] output = new byte[compressed.length * 10];
 
         assertThatThrownBy(() -> getDecompressor().decompress(compressed, 0, compressed.length, output, 0, output.length))
@@ -85,7 +85,7 @@ public abstract class AbstractTestZstd
         // which ended up emitting raw literals due to insufficient gain
         Compressor compressor = getCompressor();
 
-        byte[] original = Resources.toByteArray(Resources.getResource("data/zstd/small-literals-after-incompressible-literals"));
+        byte[] original = Resources.toByteArray(Resources.getResource("test-data/zstd/small-literals-after-incompressible-literals"));
         int maxCompressLength = compressor.maxCompressedLength(original.length);
 
         byte[] compressed = new byte[maxCompressLength];
@@ -105,7 +105,7 @@ public abstract class AbstractTestZstd
 
         Compressor compressor = getCompressor();
 
-        byte[] original = Resources.toByteArray(Resources.getResource("data/zstd/large-rle"));
+        byte[] original = Resources.toByteArray(Resources.getResource("test-data/zstd/large-rle"));
         int maxCompressLength = compressor.maxCompressedLength(original.length);
 
         byte[] compressed = new byte[maxCompressLength];
@@ -125,7 +125,7 @@ public abstract class AbstractTestZstd
 
         Compressor compressor = getCompressor();
 
-        byte[] original = Resources.toByteArray(Resources.getResource("data/zstd/incompressible"));
+        byte[] original = Resources.toByteArray(Resources.getResource("test-data/zstd/incompressible"));
         int maxCompressLength = compressor.maxCompressedLength(original.length);
 
         byte[] compressed = new byte[maxCompressLength];
@@ -176,8 +176,8 @@ public abstract class AbstractTestZstd
     void testVerifyMagicInAllFrames()
             throws IOException
     {
-        byte[] compressed = Resources.toByteArray(Resources.getResource("data/zstd/bad-second-frame.zst"));
-        byte[] uncompressed = Resources.toByteArray(Resources.getResource("data/zstd/multiple-frames"));
+        byte[] compressed = Resources.toByteArray(Resources.getResource("test-data/zstd/bad-second-frame.zst"));
+        byte[] uncompressed = Resources.toByteArray(Resources.getResource("test-data/zstd/multiple-frames"));
         byte[] output = new byte[uncompressed.length];
         assertThatThrownBy(() -> getDecompressor().decompress(compressed, 0, compressed.length, output, 0, output.length))
                 .hasMessageMatching("Invalid magic prefix.*");

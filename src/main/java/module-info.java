@@ -14,12 +14,9 @@
 
 /**
  * Pure-Java compression codecs: LZ4, Snappy, Zstandard, LZO, bzip2 and Deflate, plus xxHash. The module
- * depends on nothing but {@code java.base}.
- * <p>
- * It is an open module: every package is exported, and also open to reflection, so that the test suite
- * (which runs patched into this module) and tools like serialization frameworks need no extra flags.
+ * depends on nothing but {@code java.base}; every package is exported and none is open to reflection.
  */
-open module io.airlift.compress.v3 {
+module io.airlift.compress.v3 {
     exports io.airlift.compress.v3;
     exports io.airlift.compress.v3.bzip2;
     exports io.airlift.compress.v3.deflate;

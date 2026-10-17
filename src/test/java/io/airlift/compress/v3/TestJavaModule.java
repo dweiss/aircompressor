@@ -51,10 +51,10 @@ class TestJavaModule
                 .descriptor();
 
         assertThat(descriptor.isAutomatic()).isFalse();
-        // an open module: everything is open to reflection, which also lets the test suite run inside it
-        assertThat(descriptor.isOpen()).isTrue();
 
-        // every package is exported, unconditionally
+        // every package is exported, unconditionally, and none is open to reflection
+        assertThat(descriptor.isOpen()).isFalse();
+        assertThat(descriptor.opens()).isEmpty();
         assertThat(descriptor.exports())
                 .allSatisfy(export -> assertThat(export.isQualified()).isFalse())
                 .extracting(Exports::source)
