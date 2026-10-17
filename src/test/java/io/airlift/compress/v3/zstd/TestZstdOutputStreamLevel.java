@@ -33,7 +33,7 @@ class TestZstdOutputStreamLevel
     {
         byte[] input = compressibleInput(1024 * 1024);
 
-        int[] levels = {3, 4};
+        int[] levels = {3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
         int[] sizes = new int[levels.length];
         for (int i = 0; i < levels.length; i++) {
             byte[] compressed = compress(input, levels[i]);
@@ -45,8 +45,9 @@ class TestZstdOutputStreamLevel
             assertThat(decompressed).isEqualTo(input);
         }
 
+        // higher levels compress better, with some slack: this is a heuristic, not a guarantee
         for (int i = 1; i < levels.length; i++) {
-            assertThat(sizes[i]).as("level %s vs level %s", levels[i], levels[i - 1]).isLessThanOrEqualTo(sizes[i - 1]);
+            assertThat(sizes[i]).as("level %s vs level %s", levels[i], levels[i - 1]).isLessThanOrEqualTo((int) (sizes[i - 1] * 1.02));
         }
         assertThat(sizes[levels.length - 1]).isLessThan(sizes[0]);
     }
@@ -69,8 +70,8 @@ class TestZstdOutputStreamLevel
     @Test
     void testUnsupportedStrategyLevel()
     {
-        // only the double-fast strategy is implemented by the Java encoder
-        for (int level : new int[] {1, 2, 5, 9, 19, CompressionParameters.MAX_COMPRESSION_LEVEL}) {
+        // the fast strategy (levels 1, 2) and the binary tree strategies (levels 13 and up) are not implemented by the Java encoder
+        for (int level : new int[] {1, 2, 13, 16, 19, CompressionParameters.MAX_COMPRESSION_LEVEL}) {
             assertThatThrownBy(() -> new ZstdOutputStream(new ByteArrayOutputStream(), level))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("not implemented");

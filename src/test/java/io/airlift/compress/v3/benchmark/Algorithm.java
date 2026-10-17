@@ -54,6 +54,10 @@ public enum Algorithm
     airlift_snappy(new SnappyJavaDecompressor(), new SnappyJavaCompressor()),
     airlift_lzo(new LzoDecompressor(), new LzoCompressor()),
     airlift_zstd(new ZstdJavaDecompressor(), new ZstdJavaCompressor()),
+    airlift_zstd_5(new ZstdJavaDecompressor(), new ZstdJavaCompressor(5)),
+    airlift_zstd_7(new ZstdJavaDecompressor(), new ZstdJavaCompressor(7)),
+    airlift_zstd_9(new ZstdJavaDecompressor(), new ZstdJavaCompressor(9)),
+    airlift_zstd_12(new ZstdJavaDecompressor(), new ZstdJavaCompressor(12)),
     airlift_deflate(new DeflateJavaDecompressor(), new DeflateJavaCompressor()),
 
     airlift_lz4_stream(new Lz4Codec(), new Lz4JavaCompressor()),
@@ -66,6 +70,10 @@ public enum Algorithm
     xerial_snappy(new XerialSnappyDecompressor(), new XerialSnappyCompressor()),
     hadoop_lzo(new HadoopLzoDecompressor(), new HadoopLzoCompressor()),
     zstd_jni(new ZstdJniDecompressor(), new ZstdJniCompressor(3)),
+    zstd_jni_5(new ZstdJniDecompressor(), new ZstdJniCompressor(5)),
+    zstd_jni_7(new ZstdJniDecompressor(), new ZstdJniCompressor(7)),
+    zstd_jni_9(new ZstdJniDecompressor(), new ZstdJniCompressor(9)),
+    zstd_jni_12(new ZstdJniDecompressor(), new ZstdJniCompressor(12)),
 
     hadoop_lz4_stream(new org.apache.hadoop.io.compress.Lz4Codec(), new Lz4JavaCompressor()),
     hadoop_snappy_stream(new org.apache.hadoop.io.compress.SnappyCodec(), new SnappyJavaCompressor()),

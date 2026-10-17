@@ -27,6 +27,31 @@ import static java.util.Objects.requireNonNull;
 public class ZstdJavaCompressor
         implements ZstdCompressor
 {
+    private final int compressionLevel;
+
+    /**
+     * Creates a compressor using the {@linkplain CompressionParameters#DEFAULT_COMPRESSION_LEVEL default compression level}.
+     */
+    public ZstdJavaCompressor()
+    {
+        this(CompressionParameters.DEFAULT_COMPRESSION_LEVEL);
+    }
+
+    /**
+     * Creates a compressor using the given compression level.
+     *
+     * @param compressionLevel a level between 1 and {@value CompressionParameters#MAX_COMPRESSION_LEVEL}
+     * (0 selects the default level, {@value CompressionParameters#DEFAULT_COMPRESSION_LEVEL}). Only
+     * levels whose match-finding strategy is implemented by the Java encoder are accepted: currently
+     * the double-fast levels 3 and 4 and the greedy and lazy levels 5 to 12. Other levels throw
+     * {@link IllegalArgumentException}.
+     */
+    public ZstdJavaCompressor(int compressionLevel)
+    {
+        CompressionParameters.checkCompressionLevel(compressionLevel);
+        this.compressionLevel = compressionLevel;
+    }
+
     @Override
     public int maxCompressedLength(int uncompressedSize)
     {
@@ -48,7 +73,7 @@ public class ZstdJavaCompressor
         int inputAddress = inputOffset;
         int outputAddress = outputOffset;
 
-        return ZstdFrameCompressor.compress(input, inputAddress, inputAddress + inputLength, output, outputAddress, outputAddress + maxOutputLength, CompressionParameters.DEFAULT_COMPRESSION_LEVEL);
+        return ZstdFrameCompressor.compress(input, inputAddress, inputAddress + inputLength, output, outputAddress, outputAddress + maxOutputLength, compressionLevel);
     }
 
     @Override
@@ -83,7 +108,7 @@ public class ZstdJavaCompressor
                     outputBase,
                     outputAddress,
                     outputLimit,
-                    CompressionParameters.DEFAULT_COMPRESSION_LEVEL);
+                    compressionLevel);
             if (copyOutput) {
                 MemorySegment.copy(MemorySegment.ofArray(outputBase), 0, output, 0, written);
             }

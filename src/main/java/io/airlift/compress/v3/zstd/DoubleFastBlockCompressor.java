@@ -71,10 +71,10 @@ class DoubleFastBlockCompressor
         }
 
         while (input < inputLimit) {   // < instead of <=, because repcode check at (input+1)
-            int shortHash = hash(inputBase, input, shortHashBits, matchSearchLength);
+            int shortHash = ZstdHash.hash(inputBase, input, shortHashBits, matchSearchLength);
             long shortMatchAddress = baseAddress + shortHashTable[shortHash];
 
-            int longHash = hash8((long) Mem.LONG_LE.get(inputBase, (int) input), longHashBits);
+            int longHash = ZstdHash.hash8((long) Mem.LONG_LE.get(inputBase, (int) input), longHashBits);
             long longMatchAddress = baseAddress + longHashTable[longHash];
 
             // update hash tables
@@ -105,7 +105,7 @@ class DoubleFastBlockCompressor
                 else {
                     // check prefix short match
                     if (shortMatchAddress > windowBaseAddress && (int) Mem.INT_LE.get(inputBase, (int) shortMatchAddress) == (int) Mem.INT_LE.get(inputBase, (int) input)) {
-                        int nextOffsetHash = hash8((long) Mem.LONG_LE.get(inputBase, (int) (input + 1)), longHashBits);
+                        int nextOffsetHash = ZstdHash.hash8((long) Mem.LONG_LE.get(inputBase, (int) (input + 1)), longHashBits);
                         long nextOffsetMatchAddress = baseAddress + longHashTable[nextOffsetHash];
                         longHashTable[nextOffsetHash] = current + 1;
 
@@ -148,11 +148,11 @@ class DoubleFastBlockCompressor
 
             if (input <= inputLimit) {
                 // Fill Table
-                longHashTable[hash8((long) Mem.LONG_LE.get(inputBase, (int) (baseAddress + current + 2)), longHashBits)] = current + 2;
-                shortHashTable[hash(inputBase, baseAddress + current + 2, shortHashBits, matchSearchLength)] = current + 2;
+                longHashTable[ZstdHash.hash8((long) Mem.LONG_LE.get(inputBase, (int) (baseAddress + current + 2)), longHashBits)] = current + 2;
+                shortHashTable[ZstdHash.hash(inputBase, baseAddress + current + 2, shortHashBits, matchSearchLength)] = current + 2;
 
-                longHashTable[hash8((long) Mem.LONG_LE.get(inputBase, (int) (input - 2)), longHashBits)] = (int) (input - 2 - baseAddress);
-                shortHashTable[hash(inputBase, input - 2, shortHashBits, matchSearchLength)] = (int) (input - 2 - baseAddress);
+                longHashTable[ZstdHash.hash8((long) Mem.LONG_LE.get(inputBase, (int) (input - 2)), longHashBits)] = (int) (input - 2 - baseAddress);
+                shortHashTable[ZstdHash.hash(inputBase, input - 2, shortHashBits, matchSearchLength)] = (int) (input - 2 - baseAddress);
 
                 while (input <= inputLimit && offset2 > 0 && (int) Mem.INT_LE.get(inputBase, (int) input) == (int) Mem.INT_LE.get(inputBase, (int) (input - offset2))) {
                     int repetitionLength = count(inputBase, input + SIZE_OF_INT, inputEnd, input + SIZE_OF_INT - offset2) + SIZE_OF_INT;
@@ -162,8 +162,8 @@ class DoubleFastBlockCompressor
                     offset2 = offset1;
                     offset1 = temp;
 
-                    shortHashTable[hash(inputBase, input, shortHashBits, matchSearchLength)] = (int) (input - baseAddress);
-                    longHashTable[hash8((long) Mem.LONG_LE.get(inputBase, (int) input), longHashBits)] = (int) (input - baseAddress);
+                    shortHashTable[ZstdHash.hash(inputBase, input, shortHashBits, matchSearchLength)] = (int) (input - baseAddress);
+                    longHashTable[ZstdHash.hash8((long) Mem.LONG_LE.get(inputBase, (int) input), longHashBits)] = (int) (input - baseAddress);
 
                     output.storeSequence(inputBase, (int) anchor, 0, 0, repetitionLength - MIN_MATCH);
 
@@ -213,47 +213,5 @@ class DoubleFastBlockCompressor
         }
 
         return count;
-    }
-
-    private static int hash(byte[] inputBase, long inputAddress, int bits, int matchSearchLength)
-    {
-        return switch (matchSearchLength) {
-            case 8 -> hash8((long) Mem.LONG_LE.get(inputBase, (int) inputAddress), bits);
-            case 7 -> hash7((long) Mem.LONG_LE.get(inputBase, (int) inputAddress), bits);
-            case 6 -> hash6((long) Mem.LONG_LE.get(inputBase, (int) inputAddress), bits);
-            case 5 -> hash5((long) Mem.LONG_LE.get(inputBase, (int) inputAddress), bits);
-            default -> hash4((int) Mem.INT_LE.get(inputBase, (int) inputAddress), bits);
-        };
-    }
-
-    private static final int PRIME_4_BYTES = 0x9E3779B1;
-    private static final long PRIME_5_BYTES = 0xCF1BBCDCBBL;
-    private static final long PRIME_6_BYTES = 0xCF1BBCDCBF9BL;
-    private static final long PRIME_7_BYTES = 0xCF1BBCDCBFA563L;
-    private static final long PRIME_8_BYTES = 0xCF1BBCDCB7A56463L;
-
-    private static int hash4(int value, int bits)
-    {
-        return (value * PRIME_4_BYTES) >>> (Integer.SIZE - bits);
-    }
-
-    private static int hash5(long value, int bits)
-    {
-        return (int) (((value << (Long.SIZE - 40)) * PRIME_5_BYTES) >>> (Long.SIZE - bits));
-    }
-
-    private static int hash6(long value, int bits)
-    {
-        return (int) (((value << (Long.SIZE - 48)) * PRIME_6_BYTES) >>> (Long.SIZE - bits));
-    }
-
-    private static int hash7(long value, int bits)
-    {
-        return (int) (((value << (Long.SIZE - 56)) * PRIME_7_BYTES) >>> (Long.SIZE - bits));
-    }
-
-    private static int hash8(long value, int bits)
-    {
-        return (int) ((value * PRIME_8_BYTES) >>> (Long.SIZE - bits));
     }
 }

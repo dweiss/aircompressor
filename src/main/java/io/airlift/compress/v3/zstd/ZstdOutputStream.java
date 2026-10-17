@@ -19,11 +19,10 @@ import java.io.OutputStream;
 import java.util.Arrays;
 
 import static io.airlift.compress.v3.zstd.CompressionParameters.DEFAULT_COMPRESSION_LEVEL;
-import static io.airlift.compress.v3.zstd.CompressionParameters.MAX_COMPRESSION_LEVEL;
 import static io.airlift.compress.v3.zstd.Constants.SIZE_OF_BLOCK_HEADER;
 import static io.airlift.compress.v3.zstd.Constants.SIZE_OF_LONG;
-import static io.airlift.compress.v3.zstd.Util.checkArgument;
 import static io.airlift.compress.v3.zstd.Util.checkState;
+import static io.airlift.compress.v3.zstd.Util.cycleLog;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.util.Objects.requireNonNull;
@@ -34,6 +33,7 @@ public class ZstdOutputStream
     private final OutputStream outputStream;
     private final CompressionContext context;
     private final int maxBufferSize;
+    private final int slideAlignment;
 
     private XxHash64 partialHash;
 
@@ -62,19 +62,21 @@ public class ZstdOutputStream
      * @param compressionLevel a level between 1 and {@value CompressionParameters#MAX_COMPRESSION_LEVEL}
      * (0 selects the default level, {@value CompressionParameters#DEFAULT_COMPRESSION_LEVEL}). Only
      * levels whose match-finding strategy is implemented by the Java encoder are accepted: currently
-     * the double-fast levels 3 and 4. Other levels throw {@link IllegalArgumentException}.
+     * the double-fast levels 3 and 4 and the greedy and lazy levels 5 to 12. Other levels throw
+     * {@link IllegalArgumentException}.
      */
     public ZstdOutputStream(OutputStream outputStream, int compressionLevel)
             throws IOException
     {
         this.outputStream = requireNonNull(outputStream, "outputStream is null");
-        checkArgument(compressionLevel >= 0 && compressionLevel <= MAX_COMPRESSION_LEVEL,
-                "compressionLevel must be between 0 and " + MAX_COMPRESSION_LEVEL + ": " + compressionLevel);
+        CompressionParameters.checkCompressionLevel(compressionLevel);
         CompressionParameters parameters = CompressionParameters.compute(compressionLevel, -1);
-        checkArgument(parameters.getStrategy().isSupported(),
-                "compressionLevel " + compressionLevel + " uses the " + parameters.getStrategy() + " strategy, which is not implemented by the Java encoder");
         this.context = new CompressionContext(parameters, 0, Integer.MAX_VALUE);
-        this.maxBufferSize = context.parameters.getWindowSize() * 4;
+        this.maxBufferSize = parameters.getWindowSize() * 4;
+        // The hash chain table is indexed by position modulo its size, so sliding the window must
+        // keep positions congruent modulo that size (zstd: ZSTD_window_correctOverflow).
+        this.slideAlignment = 1 << cycleLog(parameters.getChainLog(), parameters.getStrategy());
+        checkState(slideAlignment <= parameters.getWindowSize(), "chain table larger than the window");
 
         // create output buffer large enough for a single block
         int bufferSize = context.parameters.getBlockSize() + SIZE_OF_BLOCK_HEADER;
@@ -234,11 +236,12 @@ public class ZstdOutputStream
             outputStream.write(hash >> 24);
         }
         else {
-            // slide window forward, leaving the entire window and the unprocessed data
+            // slide window forward, leaving (at least) the entire window and the unprocessed data
             int slideWindowSize = uncompressedOffset - context.parameters.getWindowSize();
+            slideWindowSize -= slideWindowSize % slideAlignment;
             context.slideWindow(slideWindowSize);
 
-            System.arraycopy(uncompressed, slideWindowSize, uncompressed, 0, context.parameters.getWindowSize() + (uncompressedPosition - uncompressedOffset));
+            System.arraycopy(uncompressed, slideWindowSize, uncompressed, 0, uncompressedPosition - slideWindowSize);
             uncompressedOffset -= slideWindowSize;
             uncompressedPosition -= slideWindowSize;
         }

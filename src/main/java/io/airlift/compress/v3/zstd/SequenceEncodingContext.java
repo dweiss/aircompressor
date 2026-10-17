@@ -27,4 +27,8 @@ class SequenceEncodingContext
 
     public final int[] counts = new int[MAX_SEQUENCES + 1];
     public final short[] normalizedCounts = new short[MAX_SEQUENCES + 1];
+
+    // scratch space for estimating the size of a serialized FSE table (FSE_NCOUNTBOUND = 512)
+    public final short[] costNormalizedCounts = new short[MAX_SEQUENCES + 1];
+    public final byte[] costBuffer = new byte[512];
 }

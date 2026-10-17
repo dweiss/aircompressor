@@ -20,6 +20,9 @@ class BlockCompressionState
     public final int[] hashTable;
     public final int[] chainTable;
 
+    // hash chain strategies: positions below this one (relative to baseAddress) are in the tables
+    public int nextToUpdate;
+
     private final int baseAddress;
 
     // starting point of the window with respect to baseAddress
@@ -37,6 +40,7 @@ class BlockCompressionState
         // The window base is expressed in the same coordinates as the table entries and must be
         // rebased too, otherwise it keeps pointing past the slid data and all matches are rejected.
         windowBaseOffset = Math.max(0, windowBaseOffset - slideWindowSize);
+        nextToUpdate = Math.max(0, nextToUpdate - slideWindowSize);
 
         for (int i = 0; i < hashTable.length; i++) {
             int newValue = hashTable[i] - slideWindowSize;
@@ -56,6 +60,7 @@ class BlockCompressionState
     {
         Arrays.fill(hashTable, 0);
         Arrays.fill(chainTable, 0);
+        nextToUpdate = 0;
     }
 
     public void enforceMaxDistance(int inputLimit, int maxDistance)

@@ -101,11 +101,8 @@ final class Util
 
     public static int cycleLog(int hashLog, CompressionParameters.Strategy strategy)
     {
-        int cycleLog = hashLog;
-        if (strategy == CompressionParameters.Strategy.BTLAZY2 || strategy == CompressionParameters.Strategy.BTOPT || strategy == CompressionParameters.Strategy.BTULTRA) {
-            cycleLog = hashLog - 1;
-        }
-        return cycleLog;
+        // binary tree strategies use two table entries per position
+        return strategy.usesBinaryTree() ? hashLog - 1 : hashLog;
     }
 
     public static int get24BitLittleEndian(byte[] inputBase, int inputAddress)
