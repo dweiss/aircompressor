@@ -30,6 +30,9 @@ without `sun.misc.Unsafe`, JNI or bundled native libraries.
   5 to 12 (greedy, lazy and lazy2 parsers with zstd's row hash and hash chain match finders, ported
   from zstd 1.5.7) are implemented in Java; the level table is the one of zstd 1.5.7. Levels 1 and 2
   and 13 and up throw `IllegalArgumentException`.
+* **A Java module.** The jar carries a module descriptor: `open module io.airlift.compress.v3`, which
+  exports every package, opens them to reflection and requires nothing but `java.base`. The test suite
+  runs patched into the module, on the module path.
 * **Standalone build.** The `io.airlift:airbase` parent pom is gone; `pom.xml` declares its plugins
   and dependency versions directly and keeps the same checkstyle rules and license header check.
 * **Faster bzip2 decompression**: a bulk bit reader, Huffman lookup tables and a multi-chain
