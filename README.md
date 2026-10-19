@@ -63,7 +63,7 @@ without `sun.misc.Unsafe`, JNI or bundled native libraries.
 <dependency>
     <groupId>com.carrotsearch.thirdparty.airlift</groupId>
     <artifactId>aircompressor-v3-jdk25</artifactId>
-    <version>3.8.3</version>
+    <version>3.8.4</version>
 </dependency>
 ```
 
